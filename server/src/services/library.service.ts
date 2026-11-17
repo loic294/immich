@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import { R_OK } from 'node:constants';
 import { Stats } from 'node:fs';
@@ -295,8 +295,17 @@ export class LibraryService extends BaseService {
 
   async syncFileMove(id: string, dto: LibraryFileMoveDto): Promise<void> {
     const library = await this.findOrFail(id);
+    const destinationLibrary =
+      dto.destinationLibraryId && dto.destinationLibraryId !== id
+        ? await this.findOrFail(dto.destinationLibraryId)
+        : library;
     const sourcePath = this.normalizeLibraryFilePath(library, dto.sourcePath);
-    const destinationPath = this.normalizeLibraryFilePath(library, dto.destinationPath);
+    const destinationPath = this.normalizeLibraryFilePath(destinationLibrary, dto.destinationPath);
+    const experimental =
+      destinationLibrary.id === library.id ? undefined : (await this.getConfig({ withCache: false })).library.experimental;
+    if (experimental && library.ownerId !== destinationLibrary.ownerId && !experimental.allowOwnershipTransfer) {
+      throw new BadRequestException('Cross-owner moves are disabled in the experimental external library settings');
+    }
 
     let destinationStat: Stats;
     try {
@@ -320,8 +329,28 @@ export class LibraryService extends BaseService {
       if (error.code !== 'ENOENT') {
         throw error;
       }
-      // The source absence is the expected post-move state.
-      return this.syncMovedDestination(library, sourcePath, destinationPath, destinationStat);
+      if (experimental) {
+        const result = await this.libraryRepository.moveAsset({
+          sourceLibrary: library,
+          destinationLibrary,
+          sourcePath,
+          destinationPath,
+          assetId: dto.assetId,
+          checksum: this.cryptoRepository.hashSha1(`path:${destinationPath}`),
+          fileModifiedAt: destinationStat.mtime,
+          experimental,
+        });
+        if ('error' in result) {
+          throw new ConflictException(result.error);
+        }
+        await this.jobRepository.queueAll([
+          { name: JobName.AssetFileMigration, data: { id: result.assetId } },
+          ...result.people.map((person) => ({ name: JobName.PersonGenerateThumbnail, data: person }) as const),
+        ]);
+        await this.queuePostSyncJobs([result.assetId]);
+        return;
+      }
+      return this.syncMovedDestination(library, sourcePath, destinationPath, destinationStat, dto.assetId);
     }
 
     throw new BadRequestException('Moved source file still exists');
@@ -332,9 +361,13 @@ export class LibraryService extends BaseService {
     sourcePath: string,
     destinationPath: string,
     destinationStat: Stats,
+    expectedAssetId?: string,
   ): Promise<void> {
     const sourceAsset = await this.assetRepository.getByLibraryIdAndOriginalPath(library.id, sourcePath);
     const destinationAsset = await this.assetRepository.getByLibraryIdAndOriginalPath(library.id, destinationPath);
+    if (expectedAssetId && expectedAssetId !== (sourceAsset?.id ?? destinationAsset?.id)) {
+      throw new ConflictException('Source asset ID changed; no assets were modified');
+    }
 
     if (sourceAsset && destinationAsset) {
       if (sourceAsset.id !== destinationAsset.id) {

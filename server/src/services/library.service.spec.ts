@@ -1180,6 +1180,65 @@ describe(LibraryService.name, () => {
   });
 
   describe('external library file synchronization', () => {
+    const sourcePath = '/mnt/source/photo.jpg';
+    const destinationPath = '/mnt/destination/photo.jpg';
+
+    const setupCrossLibraryMove = (allowOwnershipTransfer: boolean) => {
+      const source = factory.library({ importPaths: ['/mnt/source'] });
+      const destination = factory.library({ importPaths: ['/mnt/destination'] });
+      mocks.library.get.mockImplementation((id) => Promise.resolve(id === source.id ? source : destination));
+      mocks.systemMetadata.get.mockResolvedValue({
+        library: { experimental: { ...defaults.library.experimental, allowOwnershipTransfer } },
+      });
+      mocks.storage.stat.mockImplementation((filePath): Promise<Stats> =>
+        filePath === sourcePath
+          ? Promise.reject({ code: 'ENOENT' })
+          : Promise.resolve({ isFile: () => true, mtime: newDate() } as Stats),
+      );
+      return { source, destination };
+    };
+
+    it('should require opt-in before transferring between owners', async () => {
+      const { source, destination } = setupCrossLibraryMove(false);
+      await expect(sut.syncFileMove(source.id, {
+        sourcePath, destinationPath, destinationLibraryId: destination.id,
+      })).rejects.toThrow('Cross-owner moves are disabled');
+      expect(mocks.library.moveAsset).not.toHaveBeenCalled();
+    });
+
+    it('should synchronize cross-owner moves and migrate generated files', async () => {
+      const { source, destination } = setupCrossLibraryMove(true);
+      const assetId = newUuid();
+      mocks.library.moveAsset.mockResolvedValue({ assetId, people: [] });
+      await sut.syncFileMove(source.id, { sourcePath, destinationPath, destinationLibraryId: destination.id, assetId });
+      expect(mocks.library.moveAsset).toHaveBeenCalledWith(expect.objectContaining({
+        sourceLibrary: source, destinationLibrary: destination, sourcePath, destinationPath, assetId,
+      }));
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetFileMigration, data: { id: assetId } },
+      ]);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.SidecarCheck, data: { id: assetId, source: 'upload' } },
+      ]);
+    });
+
+    it('should reject a cross-library destination outside its import paths', async () => {
+      const { source, destination } = setupCrossLibraryMove(true);
+      await expect(sut.syncFileMove(source.id, {
+        sourcePath, destinationPath: '/mnt/elsewhere/photo.jpg', destinationLibraryId: destination.id,
+      })).rejects.toThrow('File path must be inside one of the library import paths');
+      expect(mocks.library.moveAsset).not.toHaveBeenCalled();
+    });
+
+    it('should report conflicting moves without queuing jobs', async () => {
+      const { source, destination } = setupCrossLibraryMove(true);
+      mocks.library.moveAsset.mockResolvedValue({ error: 'Destination already has an asset' });
+      await expect(sut.syncFileMove(source.id, {
+        sourcePath, destinationPath, destinationLibraryId: destination.id,
+      })).rejects.toThrow('Destination already has an asset');
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
     it('should synchronize an added asset', async () => {
       const library = factory.library({ importPaths: ['/mnt/library'] });
       mocks.library.get.mockResolvedValue(library);

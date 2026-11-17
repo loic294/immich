@@ -26,6 +26,22 @@ Due to aggressive caching it can take some time for a refreshed asset to appear 
 
 External libraries use import paths to determine which files to scan. Each library can have multiple import paths so that files from different locations can be added to the same library. Import paths are scanned recursively, and if a file is in multiple import paths, it will only be added once. Each import file must be a readable directory that exists on the filesystem; the import path dialog will alert you of any paths that are not accessible.
 
+### Experimental file synchronization API
+
+The fork's `POST /api/libraries/{sourceLibraryId}/files/move` endpoint synchronizes a move already performed on disk. Send `sourcePath`, `destinationPath`, the optional `destinationLibraryId` (defaults to the source library), and the original `assetId`. Paths must belong to their respective libraries. The destination file must exist and the source file must be absent. Sending the original asset ID allows a completed cross-library move to be retried safely, including requeuing background work after a queue failure.
+
+Cross-library moves preserve the asset ID and file metadata. Existing destination assets are conflicts, not silently deleted or merged. Coordinate filesystem watchers and library scans with the move; if a scan imports the destination first, the API reports a conflict. Generated thumbnails and video files are migrated asynchronously, and sidecars are rediscovered at the new location.
+
+Under **Administration → Settings → External Library → Cross-library moves [EXPERIMENTAL]**, administrators can enable ownership transfers and independently choose to:
+
+- Keep album membership and add the destination owner as an editor. Album owners remain unchanged, existing owners are never downgraded, and existing viewers become editors. This grants access to the entire album and keeps any album-based shared links active.
+- Keep individual shared links. Link owners remain unchanged; shared links do not have an editor role.
+- Transfer face detections and person assignments, copying names and birthdays without overwriting destination person details. Otherwise, existing faces are removed and detection is queued again.
+
+Ownership transfers and these retention options are off by default. Transfers clear the previous owner's favorites, tags, memories, and duplicate grouping. Unstack assets and unlink live-photo components before transferring ownership; these linked transfers are rejected rather than leaving cross-owner references.
+
+All file add/remove/move endpoints remain enabled and require an administrator account. API keys additionally require `library.update` (or `all`), even when issued to an administrator. Non-admin keys cannot gain access by requesting those permissions. Changing the experimental settings requires an administrator and `adminConfig.update` (or `all`) for API keys, matching other admin configuration tasks.
+
 If the import paths are edited in a way that an external file is no longer in any import path, it will be removed from the library in the same way a deleted file would. If the file is moved back to an import path, it will be added again as if it was a new file.
 
 ### Troubleshooting

@@ -225,6 +225,12 @@ const updatedConfig = Object.freeze<SystemConfig>({
     customCss: '',
   },
   library: {
+    experimental: {
+      allowOwnershipTransfer: false,
+      addAlbumEditor: false,
+      keepSharedLinks: false,
+      transferFaces: false,
+    },
     scan: {
       enabled: true,
       cronExpression: '0 0 * * *',

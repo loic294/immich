@@ -137,7 +137,8 @@ export class LibraryController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     summary: 'Synchronize a moved external library file',
-    description: 'Synchronize an external library asset after it has been moved on the filesystem.',
+    description:
+      'Synchronize an external library asset after it has been moved on the filesystem, optionally to another library. Cross-owner moves follow the experimental admin settings. Requires an administrator and library.update permission for API keys.',
   })
   syncFileMove(@Param() { id }: UUIDParamDto, @Body() dto: LibraryFileMoveDto): Promise<void> {
     return this.service.syncFileMove(id, dto);
