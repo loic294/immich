@@ -7713,9 +7713,9 @@
         "operationId": "syncFileAdd",
         "parameters": [
           {
-            "in": "path",
             "name": "id",
             "required": true,
+            "in": "path",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -7756,12 +7756,12 @@
         "x-immich-admin-only": true,
         "x-immich-history": [
           {
-            "state": "Added",
-            "version": "v4.0.0"
+            "version": "v4.0.0",
+            "state": "Added"
           },
           {
-            "state": "Alpha",
-            "version": "v4.0.0"
+            "version": "v4.0.0",
+            "state": "Alpha"
           }
         ],
         "x-immich-permission": "library.update",
@@ -7774,9 +7774,9 @@
         "operationId": "syncFileMove",
         "parameters": [
           {
-            "in": "path",
             "name": "id",
             "required": true,
+            "in": "path",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -7817,12 +7817,12 @@
         "x-immich-admin-only": true,
         "x-immich-history": [
           {
-            "state": "Added",
-            "version": "v4.0.0"
+            "version": "v4.0.0",
+            "state": "Added"
           },
           {
-            "state": "Alpha",
-            "version": "v4.0.0"
+            "version": "v4.0.0",
+            "state": "Alpha"
           }
         ],
         "x-immich-permission": "library.update",
@@ -7835,9 +7835,9 @@
         "operationId": "syncFileRemove",
         "parameters": [
           {
-            "in": "path",
             "name": "id",
             "required": true,
+            "in": "path",
             "schema": {
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
@@ -7878,12 +7878,12 @@
         "x-immich-admin-only": true,
         "x-immich-history": [
           {
-            "state": "Added",
-            "version": "v4.0.0"
+            "version": "v4.0.0",
+            "state": "Added"
           },
           {
-            "state": "Alpha",
-            "version": "v4.0.0"
+            "version": "v4.0.0",
+            "state": "Alpha"
           }
         ],
         "x-immich-permission": "library.update",
