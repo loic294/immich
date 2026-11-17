@@ -437,11 +437,38 @@ export class LibraryService extends BaseService {
     );
   }
 
-  async queueScan(id: string) {
-    await this.findOrFail(id);
+  async queueScan(id: string, dto: { path?: string } = {}) {
+    const library = await this.findOrFail(id);
+
+    if (dto.path) {
+      const scanPath = path.normalize(dto.path);
+      if (!path.isAbsolute(scanPath)) {
+        throw new BadRequestException('Scan path must be absolute');
+      }
+
+      const isInImportPath = this.isWithinImportPath(scanPath, library.importPaths);
+      if (!isInImportPath) {
+        throw new BadRequestException('Scan path must be inside one of the library import paths');
+      }
+
+      if (library.exclusionPatterns.some((pattern) => picomatch.isMatch(scanPath, pattern))) {
+        throw new BadRequestException('Scan path is excluded by the library settings');
+      }
+
+      const validation = await this.validateImportPath(scanPath);
+      if (!validation.isValid) {
+        throw new BadRequestException(`Invalid scan path: ${validation.message}`);
+      }
+
+      this.logger.log(`Starting to scan folder ${scanPath} in library ${id}`);
+      await this.jobRepository.queue({
+        name: JobName.LibrarySyncFilesQueueAll,
+        data: { id, path: scanPath },
+      });
+      return;
+    }
 
     this.logger.log(`Starting to scan library ${id}`);
-
     await this.jobRepository.queue({
       name: JobName.LibrarySyncFilesQueueAll,
       data: {
@@ -452,6 +479,19 @@ export class LibraryService extends BaseService {
     await this.jobRepository.queue({ name: JobName.LibrarySyncAssetsQueueAll, data: { id } });
   }
 
+  private isWithinImportPath(scanPath: string, importPaths: string[]): boolean {
+    return importPaths.some((importPath) => {
+      const relativePath = path.relative(path.normalize(importPath), scanPath);
+      return (
+        relativePath === '' ||
+        (!relativePath.startsWith(`..${path.sep}`) && relativePath !== '..' && !path.isAbsolute(relativePath))
+      );
+    });
+  }
+
+  async queueScanAll() {
+    await this.jobRepository.queue({ name: JobName.LibraryScanQueueAll, data: {} });
+  }
   @OnJob({ name: JobName.LibraryScanQueueAll, queue: QueueName.Library })
   async handleQueueScanAll(): Promise<JobStatus> {
     this.logger.log(`Initiating scan of all external libraries...`);
@@ -619,12 +659,30 @@ export class LibraryService extends BaseService {
 
     const validImportPaths: string[] = [];
 
-    for (const importPath of library.importPaths) {
-      const validation = await this.validateImportPath(importPath);
+    if (job.path) {
+      const scanPath = path.normalize(job.path);
+      if (
+        !this.isWithinImportPath(scanPath, library.importPaths) ||
+        library.exclusionPatterns.some((pattern) => picomatch.isMatch(scanPath, pattern))
+      ) {
+        this.logger.warn(`Skipping invalid or excluded folder scan path: ${scanPath}`);
+        return JobStatus.Skipped;
+      }
+
+      const validation = await this.validateImportPath(scanPath);
       if (validation.isValid) {
-        validImportPaths.push(path.normalize(importPath));
+        validImportPaths.push(scanPath);
       } else {
-        this.logger.warn(`Skipping invalid import path: ${importPath}. Reason: ${validation.message}`);
+        this.logger.warn(`Skipping invalid folder scan path: ${scanPath}. Reason: ${validation.message}`);
+      }
+    } else {
+      for (const importPath of library.importPaths) {
+        const validation = await this.validateImportPath(importPath);
+        if (validation.isValid) {
+          validImportPaths.push(path.normalize(importPath));
+        } else {
+          this.logger.warn(`Skipping invalid import path: ${importPath}. Reason: ${validation.message}`);
+        }
       }
     }
 

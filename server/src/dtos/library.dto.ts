@@ -26,6 +26,12 @@ const UpdateLibrarySchema = z
   })
   .meta({ id: 'UpdateLibraryDto' });
 
+const LibraryScanSchema = z
+  .object({
+    path: z.string().min(1).optional().describe('Folder to scan within the library import paths'),
+  })
+  .meta({ id: 'LibraryScanDto' });
+
 export interface CrawlOptionsDto {
   pathsToCrawl: string[];
   includeHidden?: boolean;
@@ -85,6 +91,7 @@ const LibraryStatsResponseSchema = z
 
 export class CreateLibraryDto extends createZodDto(CreateLibrarySchema) {}
 export class UpdateLibraryDto extends createZodDto(UpdateLibrarySchema) {}
+export class LibraryScanDto extends createZodDto(LibraryScanSchema) {}
 export class ValidateLibraryDto extends createZodDto(ValidateLibrarySchema) {}
 export class ValidateLibraryResponseDto extends createZodDto(ValidateLibraryResponseSchema) {}
 export class ValidateLibraryImportPathResponseDto extends createZodDto(ValidateLibraryImportPathResponseSchema) {}
