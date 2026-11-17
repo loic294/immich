@@ -36,7 +36,7 @@ Under **Administration → Settings → External Library → Cross-library moves
 
 - Keep album membership and add the destination owner as an editor. Album owners remain unchanged, existing owners are never downgraded, and existing viewers become editors. This grants access to the entire album and keeps any album-based shared links active.
 - Keep individual shared links. Link owners remain unchanged; shared links do not have an editor role.
-- Transfer face detections and person assignments, copying names and birthdays without overwriting destination person details. Otherwise, existing faces are removed and detection is queued again.
+- Reuse face detections and embeddings, recognizing people under the destination owner's account without copying the previous owner's person names or assignments. Otherwise, existing faces are removed and detection is queued again.
 
 Ownership transfers and these retention options are off by default. Transfers clear the previous owner's favorites, tags, memories, and duplicate grouping. Unstack assets and unlink live-photo components before transferring ownership; these linked transfers are rejected rather than leaving cross-owner references.
 

@@ -301,8 +301,8 @@ export class LibraryService extends BaseService {
         : library;
     const sourcePath = this.normalizeLibraryFilePath(library, dto.sourcePath);
     const destinationPath = this.normalizeLibraryFilePath(destinationLibrary, dto.destinationPath);
-    const experimental =
-      destinationLibrary.id === library.id ? undefined : (await this.getConfig({ withCache: false })).library.experimental;
+    const config = destinationLibrary.id === library.id ? undefined : await this.getConfig({ withCache: false });
+    const experimental = config?.library.experimental;
     if (experimental && library.ownerId !== destinationLibrary.ownerId && !experimental.allowOwnershipTransfer) {
       throw new BadRequestException('Cross-owner moves are disabled in the experimental external library settings');
     }
@@ -345,9 +345,11 @@ export class LibraryService extends BaseService {
         }
         await this.jobRepository.queueAll([
           { name: JobName.AssetFileMigration, data: { id: result.assetId } },
-          ...result.people.map((person) => ({ name: JobName.PersonGenerateThumbnail, data: person }) as const),
+          { name: JobName.SidecarCheck, data: { id: result.assetId } },
+          { name: JobName.AssetDetectDuplicates, data: { id: result.assetId } },
+          ...result.faceIds.map((id) => ({ name: JobName.FacialRecognition, data: { id } }) as const),
+          ...(result.detectFaces ? [{ name: JobName.AssetDetectFaces, data: { id: result.assetId } } as const] : []),
         ]);
-        await this.queuePostSyncJobs([result.assetId]);
         return;
       }
       return this.syncMovedDestination(library, sourcePath, destinationPath, destinationStat, dto.assetId);
@@ -371,7 +373,7 @@ export class LibraryService extends BaseService {
 
     if (sourceAsset && destinationAsset) {
       if (sourceAsset.id !== destinationAsset.id) {
-        await this.assetRepository.remove(sourceAsset);
+        throw new ConflictException('Destination already has an asset; no assets were removed');
       }
       await this.assetRepository.update({ id: destinationAsset.id, isOffline: false, deletedAt: null });
       await this.queuePostSyncJobs([destinationAsset.id]);

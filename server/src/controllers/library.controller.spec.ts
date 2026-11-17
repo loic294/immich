@@ -1,8 +1,8 @@
 import request from 'supertest';
 import { LibraryController } from 'src/controllers/library.controller.js';
-import { LibraryService } from 'src/services/library.service.js';
 import { Permission } from 'src/enum.js';
 import { AuthService } from 'src/services/auth.service.js';
+import { LibraryService } from 'src/services/library.service.js';
 import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { factory } from 'test/small.factory.js';
 import { ControllerContext, controllerSetup, mockBaseService, newTestService } from 'test/utils.js';
@@ -24,9 +24,10 @@ describe(LibraryController.name, () => {
   const id = factory.uuid();
 
   describe.each(['add', 'remove', 'move'] as const)('POST /libraries/:id/files/%s authorization', (action) => {
-    const dto = action === 'move'
-      ? { sourcePath: '/mnt/source.jpg', destinationPath: '/mnt/destination.jpg', destinationLibraryId: id }
-      : { path: '/mnt/photo.jpg' };
+    const dto =
+      action === 'move'
+        ? { sourcePath: '/mnt/source.jpg', destinationPath: '/mnt/destination.jpg', destinationLibraryId: id }
+        : { path: '/mnt/photo.jpg' };
 
     it.each([
       { isAdmin: false, permissions: [Permission.All], status: 403 },
@@ -43,11 +44,15 @@ describe(LibraryController.name, () => {
       service.syncFileMove.mockResolvedValue();
 
       const response = await request(ctx.getHttpServer())
-        .post(`/libraries/${id}/files/${action}`).set('x-api-key', 'test-key').send(dto);
+        .post(`/libraries/${id}/files/${action}`)
+        .set('x-api-key', 'test-key')
+        .send(dto);
 
       expect(response.status).toBe(status);
-      const calls = service.syncFileAdd.mock.calls.length +
-        service.syncFileRemove.mock.calls.length + service.syncFileMove.mock.calls.length;
+      const calls =
+        service.syncFileAdd.mock.calls.length +
+        service.syncFileRemove.mock.calls.length +
+        service.syncFileMove.mock.calls.length;
       expect(calls).toBe(status === 204 ? 1 : 0);
     });
 
@@ -55,15 +60,20 @@ describe(LibraryController.name, () => {
       const { sut: auth, mocks } = newTestService(AuthService);
       const user = ApiKeyFactory.from().user({ isAdmin }).build().user;
       mocks.session.getByToken.mockResolvedValue({
-        id: factory.uuid(), updatedAt: new Date(), user, isPendingSyncReset: false,
-        pinExpiresAt: null, appVersion: null, oauthSid: null,
+        id: factory.uuid(),
+        updatedAt: new Date(),
+        user,
+        pinExpiresAt: null,
+        appVersion: null,
       });
       ctx.authenticate.mockImplementation((request) => auth.authenticate(request));
       service.syncFileAdd.mockResolvedValue();
       service.syncFileRemove.mockResolvedValue();
       service.syncFileMove.mockResolvedValue();
-      const response = await request(ctx.getHttpServer()).post(`/libraries/${id}/files/${action}`)
-        .set('Cookie', 'immich_access_token=test-token').send(dto);
+      const response = await request(ctx.getHttpServer())
+        .post(`/libraries/${id}/files/${action}`)
+        .set('Cookie', 'immich_access_token=test-token')
+        .send(dto);
       expect(response.status).toBe(isAdmin ? 204 : 403);
     });
   });
@@ -209,7 +219,7 @@ describe(LibraryController.name, () => {
 
   describe('POST /libraries/:id/scan', () => {
     it('should require a valid uuid', async () => {
-      const { status, body } = await request(ctx.getHttpServer()).post('/libraries/invalid/scan');
+      const { status, body } = await request(ctx.getHttpServer()).post('/libraries/invalid/scan').send({});
 
       expect(status).toBe(400);
       expect(body).toEqual(factory.responses.validationError([{ path: ['id'], message: 'Invalid UUID' }]));

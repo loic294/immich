@@ -424,7 +424,13 @@ const AdminConfigSchemaWithVisibility = z
             allowOwnershipTransfer: configBool.describe('Allow moves between library owners'),
             addAlbumEditor: configBool.describe('Keep album membership and add the destination owner as an editor'),
             keepSharedLinks: configBool.describe('Keep individual shared links when ownership changes'),
-            transferFaces: configBool.describe('Transfer face detections and person assignments when ownership changes'),
+            transferFaces: configBool.describe('Reuse face detections and recognize people for the destination owner'),
+          })
+          .default({
+            allowOwnershipTransfer: false,
+            addAlbumEditor: false,
+            keepSharedLinks: false,
+            transferFaces: false,
           })
           .meta({ id: 'AdminConfigLibraryExperimentalDto' }),
       })
