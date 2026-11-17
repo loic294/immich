@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - external-library-api
+      - external-library-api-v3.4.1
 
 permissions:
   contents: read
@@ -48,7 +48,7 @@ jobs:
           file: server/Dockerfile
           platforms: linux/${{ matrix.arch }}
           build-args: |
-            BUILD_ID=external-library-api-v1
+            BUILD_ID=v3.4.1-external-library-api-v1
             BUILD_IMAGE=${{ env.IMAGE }}
             BUILD_SOURCE_REF=${{ github.ref_name }}
             BUILD_SOURCE_COMMIT=${{ github.sha }}
@@ -99,7 +99,7 @@ jobs:
             sources+=("$IMAGE@sha256:$digest")
           done
           docker buildx imagetools create \
-            --tag "$IMAGE:external-library-api-v1" \
-            --tag "$IMAGE:external-library-api-$GITHUB_SHA" \
+            --tag "$IMAGE:v3.4.1-external-library-api-v1" \
+            --tag "$IMAGE:v3.4.1-external-library-api-$GITHUB_SHA" \
             "${sources[@]}"
-          docker buildx imagetools inspect "$IMAGE:external-library-api-v1"
+          docker buildx imagetools inspect "$IMAGE:v3.4.1-external-library-api-v1"
