@@ -1,6 +1,12 @@
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
-import { JobNameSchema, QueueCommandSchema, QueueJobStatusSchema, QueueNameSchema } from 'src/enum.js';
+import {
+  JobNameSchema,
+  QueueCommandSchema,
+  QueueJobStatusSchema,
+  QueueNameSchema,
+  QueueStatusSchema,
+} from 'src/enum.js';
 import { queryParamArray } from 'src/validation.js';
 import { createZodDto } from 'src/zod.js';
 
@@ -72,6 +78,8 @@ const QueueResponseSchema = z
   .object({
     name: QueueNameSchema,
     isPaused: z.boolean().describe('Whether the queue is paused'),
+    isRunning: z.boolean().describe('Whether the queue currently has active jobs'),
+    status: QueueStatusSchema,
     statistics: QueueStatisticsSchema,
   })
   .meta({ id: 'QueueResponseDto' });
