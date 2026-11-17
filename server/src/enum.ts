@@ -577,6 +577,12 @@ export enum QueueName {
   Editor = 'editor',
 }
 
+export enum QueueStatus {
+  Paused = 'paused',
+  Running = 'running',
+  Idle = 'idle',
+}
+
 export enum QueueJobStatus {
   Active = 'active',
   Failed = 'failed',

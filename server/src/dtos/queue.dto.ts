@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { HistoryBuilder } from 'src/decorators';
-import { JobName, QueueCommand, QueueJobStatus, QueueName } from 'src/enum';
+import { JobName, QueueCommand, QueueJobStatus, QueueName, QueueStatus } from 'src/enum';
 import { ValidateBoolean, ValidateEnum } from 'src/validation';
 
 export class QueueNameParamDto {
@@ -75,6 +75,16 @@ export class QueueResponseDto {
 
   @ValidateBoolean({ description: 'Whether the queue is paused' })
   isPaused!: boolean;
+
+  @ValidateBoolean({ description: 'Whether the queue currently has active jobs' })
+  isRunning!: boolean;
+
+  @ValidateEnum({
+    enum: QueueStatus,
+    name: 'QueueStatus',
+    description: 'Whether the queue is paused, running, or idle',
+  })
+  status!: QueueStatus;
 
   // Description lives on schema to avoid duplication
   @ApiProperty({ description: undefined })
