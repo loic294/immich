@@ -54,6 +54,14 @@ export class UpdateLibraryDto {
   exclusionPatterns?: string[];
 }
 
+export class LibraryScanDto {
+  @ApiPropertyOptional({ description: 'Folder to scan within the library import paths' })
+  @Optional()
+  @IsString()
+  @IsNotEmpty()
+  path?: string;
+}
+
 export interface CrawlOptionsDto {
   pathsToCrawl: string[];
   includeHidden?: boolean;

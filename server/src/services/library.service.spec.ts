@@ -182,6 +182,25 @@ describe(LibraryService.name, () => {
       });
     });
 
+    it('should crawl only the requested folder', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.walk.mockImplementation(mockWalk);
+      mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      mocks.asset.filterNewExternalAssetPaths.mockResolvedValue(['/data/library/photos/photo.jpg']);
+
+      await sut.handleQueueSyncFiles({ id: library.id, path: '/mnt/library/photos' });
+
+      expect(mocks.storage.walk).toHaveBeenCalledWith({
+        pathsToCrawl: ['/mnt/library/photos'],
+        exclusionPatterns: [],
+        includeHidden: false,
+        take: JOBS_LIBRARY_PAGINATION_SIZE,
+      });
+    });
+
     it('should fail when library is not found', async () => {
       const library = factory.library({ importPaths: ['/foo', '/bar'] });
 
@@ -1146,6 +1165,33 @@ describe(LibraryService.name, () => {
         name: JobName.LibrarySyncAssetsQueueAll,
         data: { id: library.id },
       });
+    });
+
+    it('should queue a folder scan without queueing library-wide asset reconciliation', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+
+      await sut.queueScan(library.id, { path: '/mnt/library/photos' });
+
+      expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.LibrarySyncFilesQueueAll,
+        data: { id: library.id, path: '/mnt/library/photos' },
+      });
+    });
+
+    it('should reject a folder outside the library import paths', async () => {
+      const library = factory.library({ importPaths: ['/data/library'] });
+
+      mocks.library.get.mockResolvedValue(library);
+
+      await expect(sut.queueScan(library.id, { path: '/tmp/photos' })).rejects.toThrow(
+        'Scan path must be inside one of the library import paths',
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 
