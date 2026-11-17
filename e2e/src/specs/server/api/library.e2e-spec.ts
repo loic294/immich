@@ -1353,6 +1353,96 @@ describe('/libraries', () => {
     });
   });
 
+  describe('external library file synchronization', () => {
+    it('should synchronize an added file', async () => {
+      cpSync(`${testAssetDir}/temp/directoryA/assetA.png`, `${testAssetDir}/temp/directoryA/sync-add.png`);
+      const library = await utils.createLibrary(admin.accessToken, {
+        ownerId: admin.userId,
+        importPaths: [`${testAssetDirInternal}/temp/directoryA`],
+      });
+
+      const { status } = await request(app)
+        .post(`/libraries/${library.id}/files/add`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ path: `${testAssetDirInternal}/temp/directoryA/sync-add.png` });
+      expect(status).toBe(204);
+
+      await utils.waitForQueueFinish(admin.accessToken, 'library');
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+
+      const { assets } = await utils.searchAssets(admin.accessToken, {
+        originalPath: `${testAssetDirInternal}/temp/directoryA/sync-add.png`,
+        libraryId: library.id,
+      });
+      expect(assets.count).toBe(1);
+    });
+
+    it('should synchronize a removed file', async () => {
+      cpSync(`${testAssetDir}/temp/directoryA/assetA.png`, `${testAssetDir}/temp/directoryA/sync-remove.png`);
+      const library = await utils.createLibrary(admin.accessToken, {
+        ownerId: admin.userId,
+        importPaths: [`${testAssetDirInternal}/temp/directoryA`],
+      });
+
+      await request(app)
+        .post(`/libraries/${library.id}/files/add`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ path: `${testAssetDirInternal}/temp/directoryA/sync-remove.png` });
+      await utils.waitForQueueFinish(admin.accessToken, 'library');
+
+      unlinkSync(`${testAssetDir}/temp/directoryA/sync-remove.png`);
+
+      const { status } = await request(app)
+        .post(`/libraries/${library.id}/files/remove`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ path: `${testAssetDirInternal}/temp/directoryA/sync-remove.png` });
+      expect(status).toBe(204);
+
+      const { assets } = await utils.searchAssets(admin.accessToken, {
+        originalPath: `${testAssetDirInternal}/temp/directoryA/sync-remove.png`,
+        libraryId: library.id,
+      });
+      expect(assets.count).toBe(0);
+    });
+
+    it('should synchronize a moved file', async () => {
+      cpSync(`${testAssetDir}/temp/directoryA/assetA.png`, `${testAssetDir}/temp/directoryA/sync-move-source.png`);
+      const library = await utils.createLibrary(admin.accessToken, {
+        ownerId: admin.userId,
+        importPaths: [`${testAssetDirInternal}/temp/directoryA`],
+      });
+
+      await request(app)
+        .post(`/libraries/${library.id}/files/add`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ path: `${testAssetDirInternal}/temp/directoryA/sync-move-source.png` });
+      await utils.waitForQueueFinish(admin.accessToken, 'library');
+
+      cpSync(
+        `${testAssetDir}/temp/directoryA/sync-move-source.png`,
+        `${testAssetDir}/temp/directoryA/sync-move-destination.png`,
+      );
+      unlinkSync(`${testAssetDir}/temp/directoryA/sync-move-source.png`);
+
+      const { status } = await request(app)
+        .post(`/libraries/${library.id}/files/move`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({
+          sourcePath: `${testAssetDirInternal}/temp/directoryA/sync-move-source.png`,
+          destinationPath: `${testAssetDirInternal}/temp/directoryA/sync-move-destination.png`,
+        });
+      expect(status).toBe(204);
+
+      await utils.waitForQueueFinish(admin.accessToken, 'library');
+      const { assets: movedAssets } = await utils.searchAssets(admin.accessToken, {
+        originalPath: `${testAssetDirInternal}/temp/directoryA/sync-move-destination.png`,
+        libraryId: library.id,
+      });
+      expect(movedAssets.count).toBe(1);
+    });
+  });
+
   describe('POST /libraries/:id/validate', () => {
     it('should require authentication', async () => {
       const { status, body } = await request(app).post(`/libraries/${uuidDto.notFound}/validate`).send({});
