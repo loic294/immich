@@ -62,6 +62,25 @@ export class LibraryScanDto {
   path?: string;
 }
 
+export class LibraryFilePathDto {
+  @ApiProperty({ description: 'Absolute file path within the library import paths' })
+  @IsString()
+  @IsNotEmpty()
+  path!: string;
+}
+
+export class LibraryFileMoveDto {
+  @ApiProperty({ description: 'Absolute source file path within the library import paths' })
+  @IsString()
+  @IsNotEmpty()
+  sourcePath!: string;
+
+  @ApiProperty({ description: 'Absolute destination file path within the library import paths' })
+  @IsString()
+  @IsNotEmpty()
+  destinationPath!: string;
+}
+
 export interface CrawlOptionsDto {
   pathsToCrawl: string[];
   includeHidden?: boolean;

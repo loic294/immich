@@ -9,6 +9,8 @@ import { StorageCore } from 'src/cores/storage.core';
 import { OnEvent, OnJob } from 'src/decorators';
 import {
   CreateLibraryDto,
+  LibraryFileMoveDto,
+  LibraryFilePathDto,
   LibraryResponseDto,
   LibraryStatsResponseDto,
   mapLibrary,
@@ -210,6 +212,155 @@ export class LibraryService extends BaseService {
   async getAll(): Promise<LibraryResponseDto[]> {
     const libraries = await this.libraryRepository.getAll(false);
     return libraries.map((library) => mapLibrary(library));
+  }
+
+  private normalizeLibraryFilePath(
+    library: { importPaths: string[]; exclusionPatterns: string[] },
+    filePath: string,
+  ): string {
+    const normalizedPath = path.normalize(filePath);
+    if (!path.isAbsolute(normalizedPath)) {
+      throw new BadRequestException('File path must be absolute');
+    }
+    if (!this.isWithinImportPath(normalizedPath, library.importPaths)) {
+      throw new BadRequestException('File path must be inside one of the library import paths');
+    }
+    if (library.exclusionPatterns.some((pattern) => picomatch.isMatch(normalizedPath, pattern))) {
+      throw new BadRequestException('File path is excluded by the library settings');
+    }
+    return normalizedPath;
+  }
+
+  async syncFileAdd(id: string, dto: LibraryFilePathDto): Promise<void> {
+    const library = await this.findOrFail(id);
+    const filePath = this.normalizeLibraryFilePath(library, dto.path);
+
+    let stat: Stats;
+    try {
+      stat = await this.storageRepository.stat(filePath);
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        throw new BadRequestException('Added file does not exist');
+      }
+      throw error;
+    }
+    if (!stat.isFile()) {
+      throw new BadRequestException('Added path is not a file');
+    }
+    if (!mimeTypes.isAsset(filePath)) {
+      throw new BadRequestException('Added file is not a supported image or video');
+    }
+
+    const existing = await this.assetRepository.getByLibraryIdAndOriginalPath(library.id, filePath);
+    if (existing) {
+      if (existing.isOffline) {
+        await this.assetRepository.update({ id: existing.id, isOffline: false, deletedAt: null });
+        await this.queuePostSyncJobs([existing.id]);
+      }
+      return;
+    }
+
+    const asset = await this.processEntity(filePath, library.ownerId, library.id);
+    const assetIds = await this.assetRepository.createAll([asset]);
+    await this.queuePostSyncJobs(assetIds);
+  }
+
+  async syncFileRemove(id: string, dto: LibraryFilePathDto): Promise<void> {
+    const library = await this.findOrFail(id);
+    const filePath = this.normalizeLibraryFilePath(library, dto.path);
+
+    try {
+      await this.storageRepository.stat(filePath);
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+      return this.removeAssetByPath(library.id, filePath);
+    }
+
+    throw new BadRequestException('Removed file still exists');
+  }
+
+  private async removeAssetByPath(libraryId: string, filePath: string): Promise<void> {
+    const asset = await this.assetRepository.getByLibraryIdAndOriginalPath(libraryId, filePath);
+    if (asset) {
+      await this.assetRepository.remove(asset);
+    }
+  }
+
+  async syncFileMove(id: string, dto: LibraryFileMoveDto): Promise<void> {
+    const library = await this.findOrFail(id);
+    const sourcePath = this.normalizeLibraryFilePath(library, dto.sourcePath);
+    const destinationPath = this.normalizeLibraryFilePath(library, dto.destinationPath);
+
+    let destinationStat: Stats;
+    try {
+      destinationStat = await this.storageRepository.stat(destinationPath);
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        throw new BadRequestException('Moved destination file does not exist');
+      }
+      throw error;
+    }
+    if (!destinationStat.isFile()) {
+      throw new BadRequestException('Moved destination path is not a file');
+    }
+    if (!mimeTypes.isAsset(destinationPath)) {
+      throw new BadRequestException('Moved destination file is not a supported image or video');
+    }
+
+    try {
+      await this.storageRepository.stat(sourcePath);
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+      // The source absence is the expected post-move state.
+      return this.syncMovedDestination(library, sourcePath, destinationPath, destinationStat);
+    }
+
+    throw new BadRequestException('Moved source file still exists');
+  }
+
+  private async syncMovedDestination(
+    library: { id: string; ownerId: string },
+    sourcePath: string,
+    destinationPath: string,
+    destinationStat: Stats,
+  ): Promise<void> {
+    const sourceAsset = await this.assetRepository.getByLibraryIdAndOriginalPath(library.id, sourcePath);
+    const destinationAsset = await this.assetRepository.getByLibraryIdAndOriginalPath(library.id, destinationPath);
+
+    if (sourceAsset && destinationAsset) {
+      if (sourceAsset.id !== destinationAsset.id) {
+        await this.assetRepository.remove(sourceAsset);
+      }
+      await this.assetRepository.update({ id: destinationAsset.id, isOffline: false, deletedAt: null });
+      await this.queuePostSyncJobs([destinationAsset.id]);
+      return;
+    }
+
+    if (destinationAsset) {
+      await this.assetRepository.update({ id: destinationAsset.id, isOffline: false, deletedAt: null });
+      await this.queuePostSyncJobs([destinationAsset.id]);
+      return;
+    }
+
+    if (!sourceAsset) {
+      throw new BadRequestException('No external library asset found for the source or destination path');
+    }
+
+    await this.assetRepository.update({
+      id: sourceAsset.id,
+      originalPath: destinationPath,
+      originalFileName: basename(destinationPath),
+      checksum: this.cryptoRepository.hashSha1(`path:${destinationPath}`),
+      checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+      fileModifiedAt: destinationStat.mtime,
+      isOffline: false,
+      deletedAt: null,
+    });
+    await this.queuePostSyncJobs([sourceAsset.id]);
   }
 
   @OnJob({ name: JobName.LibraryDeleteCheck, queue: QueueName.Library })
