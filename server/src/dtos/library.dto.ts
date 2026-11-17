@@ -42,6 +42,8 @@ const LibraryFileMoveSchema = z
   .object({
     sourcePath: z.string().min(1).describe('Absolute source file path within the library import paths'),
     destinationPath: z.string().min(1).describe('Absolute destination file path within the library import paths'),
+    destinationLibraryId: z.uuidv4().optional().describe('Destination library ID; defaults to the source library'),
+    assetId: z.uuidv4().optional().describe('Expected asset ID; supply for safe cross-library move retries'),
   })
   .meta({ id: 'LibraryFileMoveDto' });
 export interface CrawlOptionsDto {

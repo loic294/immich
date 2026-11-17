@@ -422,6 +422,14 @@ const AdminConfigSchemaWithVisibility = z
           })
           .meta({ id: 'AdminConfigLibraryScanDto' }),
         watch: z.object({ enabled: configBool.describe('Enabled') }).meta({ id: 'AdminConfigLibraryWatchDto' }),
+        experimental: z
+          .object({
+            allowOwnershipTransfer: configBool.describe('Allow moves between library owners'),
+            addAlbumEditor: configBool.describe('Keep album membership and add the destination owner as an editor'),
+            keepSharedLinks: configBool.describe('Keep individual shared links when ownership changes'),
+            transferFaces: configBool.describe('Transfer face detections and person assignments when ownership changes'),
+          })
+          .meta({ id: 'AdminConfigLibraryExperimentalDto' }),
       })
       .meta({ id: 'AdminConfigLibraryDto' }),
     notifications: z.object({ smtp: AdminConfigSmtpSchema }).meta({ id: 'AdminConfigNotificationsDto' }),
@@ -813,6 +821,12 @@ export const defaults = Object.freeze<SystemConfig>({
     customCss: '',
   },
   library: {
+    experimental: {
+      allowOwnershipTransfer: false,
+      addAlbumEditor: false,
+      keepSharedLinks: false,
+      transferFaces: false,
+    },
     scan: {
       enabled: true,
       cronExpression: CronExpression.EVERY_DAY_AT_MIDNIGHT,
