@@ -27,6 +27,72 @@ describe('/libraries', () => {
   });
 
   describe('POST /libraries/:id/scan', () => {
+    it('should require authentication', async () => {
+      const { status, body } = await request(app).post(`/libraries/${uuidDto.notFound}/scan`).send({});
+
+      expect(status).toBe(401);
+      expect(body).toEqual(errorDto.unauthorized);
+    });
+
+    it('should import new asset when scanning external library', async () => {
+      const library = await utils.createLibrary(admin.accessToken, {
+        ownerId: admin.userId,
+        importPaths: [`${testAssetDirInternal}/temp/directoryA`],
+      });
+
+      const { status } = await request(app)
+        .post(`/libraries/${library.id}/scan`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send();
+      expect(status).toBe(204);
+
+      await utils.waitForQueueFinish(admin.accessToken, 'library');
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+
+      const { assets } = await utils.searchAssets(admin.accessToken, {
+        originalPath: `${testAssetDirInternal}/temp/directoryA/assetA.png`,
+        libraryId: library.id,
+      });
+      expect(assets.count).toBe(1);
+    });
+
+    it('should import assets when scanning a specific folder', async () => {
+      const library = await utils.createLibrary(admin.accessToken, {
+        ownerId: admin.userId,
+        importPaths: [`${testAssetDirInternal}/temp`],
+      });
+
+      const { status } = await request(app)
+        .post(`/libraries/${library.id}/scan`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ path: `${testAssetDirInternal}/temp/directoryA` });
+      expect(status).toBe(204);
+
+      await utils.waitForQueueFinish(admin.accessToken, 'library');
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+
+      const { assets } = await utils.searchAssets(admin.accessToken, {
+        originalPath: `${testAssetDirInternal}/temp/directoryA/assetA.png`,
+        libraryId: library.id,
+      });
+      expect(assets.count).toBe(1);
+    });
+
+    it('should reject a folder outside the library import paths', async () => {
+      const library = await utils.createLibrary(admin.accessToken, {
+        ownerId: admin.userId,
+        importPaths: [`${testAssetDirInternal}/temp/directoryA`],
+      });
+
+      const { status } = await request(app)
+        .post(`/libraries/${library.id}/scan`)
+        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .send({ path: `${testAssetDirInternal}/temp/directoryB` });
+      expect(status).toBe(400);
+    });
+
     it('should process metadata and thumbnails for external asset', async () => {
       const library = await utils.createLibrary(admin.accessToken, {
         ownerId: admin.userId,
