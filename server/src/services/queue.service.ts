@@ -25,6 +25,7 @@ import {
   QueueCleanType,
   QueueCommand,
   QueueName,
+  QueueStatus,
 } from 'src/enum.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { BaseService } from 'src/services/base.service.js';
@@ -185,7 +186,9 @@ export class QueueService extends BaseService {
       this.jobRepository.getJobCounts(name),
       this.jobRepository.isPaused(name),
     ]);
-    return { name, isPaused, statistics: { ...statistics, paused: 0 } };
+    const isRunning = statistics.active > 0;
+    const status = isPaused ? QueueStatus.Paused : isRunning ? QueueStatus.Running : QueueStatus.Idle;
+    return { name, isPaused, isRunning, status, statistics: { ...statistics, paused: 0 } };
   }
 
   private async start(name: QueueName, { force }: QueueCommandDto): Promise<void> {
