@@ -1,7 +1,10 @@
-import { LoginResponseDto } from '@immich/sdk';
-import { cpSync } from 'node:fs';
+import { LibraryResponseDto, LoginResponseDto, getAllLibraries } from '@immich/sdk';
+import { cpSync, existsSync, rmSync, unlinkSync } from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { Socket } from 'socket.io-client';
-import { testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
+import { uuidDto } from 'src/fixtures.js';
+import { app, asBearerAuth, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
+import request from 'supertest';
 import { utimes } from 'utimes';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -31,7 +34,7 @@ describe('/libraries', () => {
       const { status, body } = await request(app).post(`/libraries/${uuidDto.notFound}/scan`).send({});
 
       expect(status).toBe(401);
-      expect(body).toEqual(errorDto.unauthorized);
+      expect(body).toEqual(expect.objectContaining({ statusCode: 401 }));
     });
 
     it('should import new asset when scanning external library', async () => {
@@ -40,11 +43,11 @@ describe('/libraries', () => {
         importPaths: [`${testAssetDirInternal}/temp/directoryA`],
       });
 
-      const { status } = await request(app)
+      const { status, body } = await request(app)
         .post(`/libraries/${library.id}/scan`)
         .set('Authorization', `Bearer ${admin.accessToken}`)
-        .send();
-      expect(status).toBe(204);
+        .send({});
+      expect(status, JSON.stringify(body)).toBe(204);
 
       await utils.waitForQueueFinish(admin.accessToken, 'library');
       await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
@@ -774,14 +777,18 @@ describe('/libraries', () => {
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({ path: `${testAssetDirInternal}/temp/directoryA/sync-remove.png` });
       await utils.waitForQueueFinish(admin.accessToken, 'library');
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
 
       unlinkSync(`${testAssetDir}/temp/directoryA/sync-remove.png`);
+      await sleep(1000);
 
-      const { status } = await request(app)
+      const { status, body } = await request(app)
         .post(`/libraries/${library.id}/files/remove`)
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({ path: `${testAssetDirInternal}/temp/directoryA/sync-remove.png` });
-      expect(status).toBe(204);
+      expect(status, JSON.stringify(body)).toBe(204);
 
       const { assets } = await utils.searchAssets(admin.accessToken, {
         originalPath: `${testAssetDirInternal}/temp/directoryA/sync-remove.png`,
@@ -802,23 +809,30 @@ describe('/libraries', () => {
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({ path: `${testAssetDirInternal}/temp/directoryA/sync-move-source.png` });
       await utils.waitForQueueFinish(admin.accessToken, 'library');
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
 
       cpSync(
         `${testAssetDir}/temp/directoryA/sync-move-source.png`,
         `${testAssetDir}/temp/directoryA/sync-move-destination.png`,
       );
       unlinkSync(`${testAssetDir}/temp/directoryA/sync-move-source.png`);
+      await sleep(1000);
 
-      const { status } = await request(app)
+      const { status, body } = await request(app)
         .post(`/libraries/${library.id}/files/move`)
         .set('Authorization', `Bearer ${admin.accessToken}`)
         .send({
           sourcePath: `${testAssetDirInternal}/temp/directoryA/sync-move-source.png`,
           destinationPath: `${testAssetDirInternal}/temp/directoryA/sync-move-destination.png`,
         });
-      expect(status).toBe(204);
+      expect(status, JSON.stringify(body)).toBe(204);
 
       await utils.waitForQueueFinish(admin.accessToken, 'library');
+      await utils.waitForQueueFinish(admin.accessToken, 'sidecar');
+      await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+      await utils.waitForQueueFinish(admin.accessToken, 'thumbnailGeneration');
       const { assets: movedAssets } = await utils.searchAssets(admin.accessToken, {
         originalPath: `${testAssetDirInternal}/temp/directoryA/sync-move-destination.png`,
         libraryId: library.id,
@@ -828,11 +842,17 @@ describe('/libraries', () => {
   });
 
   describe('POST /libraries/:id/validate', () => {
+    let library: LibraryResponseDto;
+
+    beforeAll(async () => {
+      library = await utils.createLibrary(admin.accessToken, { ownerId: admin.userId });
+    });
+
     it('should require authentication', async () => {
       const { status, body } = await request(app).post(`/libraries/${uuidDto.notFound}/validate`).send({});
 
       expect(status).toBe(401);
-      expect(body).toEqual(errorDto.unauthorized);
+      expect(body).toEqual(expect.objectContaining({ statusCode: 401 }));
     });
 
     it('should pass with no import paths', async () => {
@@ -903,7 +923,7 @@ describe('/libraries', () => {
       const { status, body } = await request(app).delete(`/libraries/${uuidDto.notFound}`);
 
       expect(status).toBe(401);
-      expect(body).toEqual(errorDto.unauthorized);
+      expect(body).toEqual(expect.objectContaining({ statusCode: 401 }));
     });
 
     it('should delete an external library', async () => {

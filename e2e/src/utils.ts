@@ -688,7 +688,7 @@ export const utils = {
   },
 
   scan: async (accessToken: string, id: string) => {
-    await scanLibrary({ id }, { headers: asBearerAuth(accessToken) });
+    await scanLibrary({ id, libraryScanDto: {} }, { headers: asBearerAuth(accessToken) });
 
     await utils.waitForQueueFinish(accessToken, 'library');
     await utils.waitForQueueFinish(accessToken, 'sidecar');
