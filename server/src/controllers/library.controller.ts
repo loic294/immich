@@ -109,6 +109,7 @@ export class LibraryController {
   @Endpoint({
     summary: 'Synchronize an added external library file',
     description: 'Synchronize an external library asset after it has been added to the filesystem.',
+    history: new HistoryBuilder().added('v2.8.0').alpha('v2.8.0'),
   })
   syncFileAdd(@Param() { id }: UUIDParamDto, @Body() dto: LibraryFilePathDto): Promise<void> {
     return this.service.syncFileAdd(id, dto);
@@ -120,6 +121,7 @@ export class LibraryController {
   @Endpoint({
     summary: 'Synchronize a removed external library file',
     description: 'Synchronize an external library asset after it has been removed from the filesystem.',
+    history: new HistoryBuilder().added('v2.8.0').alpha('v2.8.0'),
   })
   syncFileRemove(@Param() { id }: UUIDParamDto, @Body() dto: LibraryFilePathDto): Promise<void> {
     return this.service.syncFileRemove(id, dto);
@@ -131,6 +133,7 @@ export class LibraryController {
   @Endpoint({
     summary: 'Synchronize a moved external library file',
     description: 'Synchronize an external library asset after it has been moved on the filesystem.',
+    history: new HistoryBuilder().added('v2.8.0').alpha('v2.8.0'),
   })
   syncFileMove(@Param() { id }: UUIDParamDto, @Body() dto: LibraryFileMoveDto): Promise<void> {
     return this.service.syncFileMove(id, dto);

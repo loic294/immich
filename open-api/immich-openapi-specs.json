@@ -6124,6 +6124,186 @@
         "x-immich-state": "Stable"
       }
     },
+    "/libraries/{id}/files/add": {
+      "post": {
+        "description": "Synchronize an external library asset after it has been added to the filesystem.",
+        "operationId": "syncFileAdd",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryFilePathDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Synchronize an added external library file",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v2.8.0",
+            "state": "Added"
+          },
+          {
+            "version": "v2.8.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "library.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/libraries/{id}/files/move": {
+      "post": {
+        "description": "Synchronize an external library asset after it has been moved on the filesystem.",
+        "operationId": "syncFileMove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryFileMoveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Synchronize a moved external library file",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v2.8.0",
+            "state": "Added"
+          },
+          {
+            "version": "v2.8.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "library.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/libraries/{id}/files/remove": {
+      "post": {
+        "description": "Synchronize an external library asset after it has been removed from the filesystem.",
+        "operationId": "syncFileRemove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryFilePathDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Synchronize a removed external library file",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v2.8.0",
+            "state": "Added"
+          },
+          {
+            "version": "v2.8.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "library.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/libraries/{id}/scan": {
       "post": {
         "description": "Queue a scan for the external library to find and import new assets.",
@@ -6139,6 +6319,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryScanDto"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "204": {
             "description": ""
@@ -18333,6 +18523,35 @@
         ],
         "type": "object"
       },
+      "LibraryFileMoveDto": {
+        "properties": {
+          "destinationPath": {
+            "description": "Absolute destination file path within the library import paths",
+            "type": "string"
+          },
+          "sourcePath": {
+            "description": "Absolute source file path within the library import paths",
+            "type": "string"
+          }
+        },
+        "required": [
+          "destinationPath",
+          "sourcePath"
+        ],
+        "type": "object"
+      },
+      "LibraryFilePathDto": {
+        "properties": {
+          "path": {
+            "description": "Absolute file path within the library import paths",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
       "LibraryResponseDto": {
         "properties": {
           "assetCount": {
@@ -18393,6 +18612,15 @@
           "refreshedAt",
           "updatedAt"
         ],
+        "type": "object"
+      },
+      "LibraryScanDto": {
+        "properties": {
+          "path": {
+            "description": "Folder to scan within the library import paths",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "LibraryStatsResponseDto": {
@@ -20631,6 +20859,10 @@
             "description": "Whether the queue is paused",
             "type": "boolean"
           },
+          "isRunning": {
+            "description": "Whether the queue currently has active jobs",
+            "type": "boolean"
+          },
           "name": {
             "allOf": [
               {
@@ -20641,12 +20873,22 @@
           },
           "statistics": {
             "$ref": "#/components/schemas/QueueStatisticsDto"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QueueStatus"
+              }
+            ],
+            "description": "Whether the queue is paused, running, or idle"
           }
         },
         "required": [
           "isPaused",
+          "isRunning",
           "name",
-          "statistics"
+          "statistics",
+          "status"
         ],
         "type": "object"
       },
@@ -20701,6 +20943,15 @@
           "waiting"
         ],
         "type": "object"
+      },
+      "QueueStatus": {
+        "description": "Whether the queue is paused, running, or idle",
+        "enum": [
+          "paused",
+          "running",
+          "idle"
+        ],
+        "type": "string"
       },
       "QueueStatusLegacyDto": {
         "properties": {

@@ -1335,6 +1335,20 @@ export type UpdateLibraryDto = {
     /** Library name */
     name?: string;
 };
+export type LibraryFilePathDto = {
+    /** Absolute file path within the library import paths */
+    path: string;
+};
+export type LibraryFileMoveDto = {
+    /** Absolute destination file path within the library import paths */
+    destinationPath: string;
+    /** Absolute source file path within the library import paths */
+    sourcePath: string;
+};
+export type LibraryScanDto = {
+    /** Folder to scan within the library import paths */
+    path?: string;
+};
 export type LibraryStatsResponseDto = {
     /** Number of photos */
     photos: number;
@@ -1639,9 +1653,13 @@ export type PluginTriggerResponseDto = {
 export type QueueResponseDto = {
     /** Whether the queue is paused */
     isPaused: boolean;
+    /** Whether the queue currently has active jobs */
+    isRunning: boolean;
     /** Queue name */
     name: QueueName;
     statistics: QueueStatisticsDto;
+    /** Whether the queue is paused, running, or idle */
+    status: QueueStatus;
 };
 export type QueueUpdateDto = {
     /** Whether to pause the queue */
@@ -4734,15 +4752,56 @@ export function updateLibrary({ id, updateLibraryDto }: {
     })));
 }
 /**
+ * Synchronize an added external library file
+ */
+export function syncFileAdd({ id, libraryFilePathDto }: {
+    id: string;
+    libraryFilePathDto: LibraryFilePathDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/files/add`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryFilePathDto
+    })));
+}
+/**
+ * Synchronize a moved external library file
+ */
+export function syncFileMove({ id, libraryFileMoveDto }: {
+    id: string;
+    libraryFileMoveDto: LibraryFileMoveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/files/move`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryFileMoveDto
+    })));
+}
+/**
+ * Synchronize a removed external library file
+ */
+export function syncFileRemove({ id, libraryFilePathDto }: {
+    id: string;
+    libraryFilePathDto: LibraryFilePathDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/files/remove`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryFilePathDto
+    })));
+}
+/**
  * Scan a library
  */
-export function scanLibrary({ id }: {
+export function scanLibrary({ id, libraryScanDto }: {
     id: string;
+    libraryScanDto: LibraryScanDto;
 }, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/scan`, {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/scan`, oazapfts.json({
         ...opts,
-        method: "POST"
-    }));
+        method: "POST",
+        body: libraryScanDto
+    })));
 }
 /**
  * Retrieve library statistics
@@ -7180,6 +7239,11 @@ export enum PluginContextType {
 export enum PluginTriggerType {
     AssetCreate = "AssetCreate",
     PersonRecognized = "PersonRecognized"
+}
+export enum QueueStatus {
+    Paused = "paused",
+    Running = "running",
+    Idle = "idle"
 }
 export enum QueueJobStatus {
     Active = "active",
