@@ -7883,6 +7883,189 @@
         "x-immich-state": "Stable"
       }
     },
+    "/libraries/{id}/files/add": {
+      "post": {
+        "description": "Synchronize an external library asset after it has been added to the filesystem.",
+        "operationId": "syncFileAdd",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryFilePathDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Synchronize an added external library file",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "state": "Added",
+            "version": "v4.0.0"
+          },
+          {
+            "state": "Alpha",
+            "version": "v4.0.0"
+          }
+        ],
+        "x-immich-permission": "library.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/libraries/{id}/files/move": {
+      "post": {
+        "description": "Synchronize an external library asset after it has been moved on the filesystem, optionally to another library. Cross-owner moves follow the experimental admin settings. Requires an administrator and library.update permission for API keys.",
+        "operationId": "syncFileMove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryFileMoveDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Synchronize a moved external library file",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "state": "Added",
+            "version": "v4.0.0"
+          },
+          {
+            "state": "Alpha",
+            "version": "v4.0.0"
+          }
+        ],
+        "x-immich-permission": "library.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/libraries/{id}/files/remove": {
+      "post": {
+        "description": "Synchronize an external library asset after it has been removed from the filesystem.",
+        "operationId": "syncFileRemove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryFilePathDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Synchronize a removed external library file",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "state": "Added",
+            "version": "v4.0.0"
+          },
+          {
+            "state": "Alpha",
+            "version": "v4.0.0"
+          }
+        ],
+        "x-immich-permission": "library.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/libraries/{id}/scan": {
       "post": {
         "description": "Queue a scan for the external library to find and import new assets.",
@@ -7899,6 +8082,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryScanDto"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "204": {
             "description": ""
@@ -19726,6 +19919,9 @@
       },
       "AdminConfigLibraryDto": {
         "properties": {
+          "experimental": {
+            "$ref": "#/components/schemas/AdminConfigLibraryExperimentalDto"
+          },
           "scan": {
             "$ref": "#/components/schemas/AdminConfigLibraryScanDto"
           },
@@ -19736,6 +19932,33 @@
         "required": [
           "scan",
           "watch"
+        ],
+        "type": "object"
+      },
+      "AdminConfigLibraryExperimentalDto": {
+        "properties": {
+          "addAlbumEditor": {
+            "description": "Keep album membership and add the destination owner as an editor",
+            "type": "boolean"
+          },
+          "allowOwnershipTransfer": {
+            "description": "Allow moves between library owners",
+            "type": "boolean"
+          },
+          "keepSharedLinks": {
+            "description": "Keep individual shared links when ownership changes",
+            "type": "boolean"
+          },
+          "transferFaces": {
+            "description": "Reuse face detections and recognize people for the destination owner",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "addAlbumEditor",
+          "allowOwnershipTransfer",
+          "keepSharedLinks",
+          "transferFaces"
         ],
         "type": "object"
       },
@@ -23578,6 +23801,50 @@
         ],
         "type": "string"
       },
+      "LibraryFileMoveDto": {
+        "properties": {
+          "assetId": {
+            "description": "Expected asset ID; supply for safe cross-library move retries",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "destinationLibraryId": {
+            "description": "Destination library ID; defaults to the source library",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "destinationPath": {
+            "description": "Absolute destination file path within the library import paths",
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourcePath": {
+            "description": "Absolute source file path within the library import paths",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "destinationPath",
+          "sourcePath"
+        ],
+        "type": "object"
+      },
+      "LibraryFilePathDto": {
+        "properties": {
+          "path": {
+            "description": "Absolute file path within the library import paths",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
       "LibraryResponseDto": {
         "properties": {
           "assetCount": {
@@ -23652,6 +23919,16 @@
           "refreshedAt",
           "updatedAt"
         ],
+        "type": "object"
+      },
+      "LibraryScanDto": {
+        "properties": {
+          "path": {
+            "description": "Folder to scan within the library import paths",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "LibraryStatsResponseDto": {
@@ -27191,17 +27468,26 @@
             "description": "Whether the queue is paused",
             "type": "boolean"
           },
+          "isRunning": {
+            "description": "Whether the queue currently has active jobs",
+            "type": "boolean"
+          },
           "name": {
             "$ref": "#/components/schemas/QueueName"
           },
           "statistics": {
             "$ref": "#/components/schemas/QueueStatisticsDto"
+          },
+          "status": {
+            "$ref": "#/components/schemas/QueueStatus"
           }
         },
         "required": [
           "isPaused",
+          "isRunning",
           "name",
-          "statistics"
+          "statistics",
+          "status"
         ],
         "type": "object"
       },
@@ -27284,6 +27570,15 @@
           "waiting"
         ],
         "type": "object"
+      },
+      "QueueStatus": {
+        "description": "Queue status",
+        "enum": [
+          "paused",
+          "running",
+          "idle"
+        ],
+        "type": "string"
       },
       "QueueStatusLegacyDto": {
         "properties": {

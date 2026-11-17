@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { sql, type Insertable, type Kysely, type Selectable, type Updateable } from 'kysely';
-import { basename } from 'node:path';
 import { InjectKysely } from 'nestjs-kysely';
+import { basename } from 'node:path';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { LibraryStatsResponseDto } from 'src/dtos/library.dto.js';
@@ -27,9 +27,7 @@ type MoveAssetOptions = {
   fileModifiedAt: Date;
   experimental: SystemConfig['library']['experimental'];
 };
-type MoveAssetResult =
-  | { assetId: string; people: { ownerId: string; personGroupId: string }[] }
-  | { error: string };
+type MoveAssetResult = { assetId: string; faceIds: string[]; detectFaces: boolean } | { error: string };
 
 @Injectable()
 export class LibraryRepository {
@@ -89,30 +87,60 @@ export class LibraryRepository {
   moveAsset(options: MoveAssetOptions): Promise<MoveAssetResult> {
     const { sourceLibrary, destinationLibrary, sourcePath, destinationPath, experimental } = options;
     return this.db.transaction().execute(async (tx): Promise<MoveAssetResult> => {
-      const libraries = await tx.selectFrom('library').selectAll()
-        .where('id', 'in', [sourceLibrary.id, destinationLibrary.id]).orderBy('id').forUpdate().execute();
+      const libraries = await tx
+        .selectFrom('library')
+        .selectAll()
+        .where('id', 'in', [sourceLibrary.id, destinationLibrary.id])
+        .orderBy('id')
+        .forUpdate()
+        .execute();
       for (const expected of [sourceLibrary, destinationLibrary]) {
         const current = libraries.find(({ id }) => id === expected.id);
-        if (!current || current.deletedAt || current.ownerId !== expected.ownerId ||
+        if (
+          !current ||
+          current.deletedAt ||
+          current.ownerId !== expected.ownerId ||
           JSON.stringify(current.importPaths) !== JSON.stringify(expected.importPaths) ||
-          JSON.stringify(current.exclusionPatterns) !== JSON.stringify(expected.exclusionPatterns)) {
+          JSON.stringify(current.exclusionPatterns) !== JSON.stringify(expected.exclusionPatterns)
+        ) {
           return { error: 'Library settings changed during the move; retry after verifying both libraries' };
         }
       }
-      const assets = await tx.selectFrom('asset').selectAll().where((eb) => eb.or([
-        eb.and([eb('libraryId', '=', sourceLibrary.id), eb('originalPath', '=', sourcePath)]),
-        eb.and([eb('libraryId', '=', destinationLibrary.id), eb('originalPath', '=', destinationPath)]),
-      ])).orderBy('id').forUpdate().execute();
+      const assets = await tx
+        .selectFrom('asset')
+        .selectAll()
+        .where((eb) =>
+          eb.or([
+            eb.and([eb('libraryId', '=', sourceLibrary.id), eb('originalPath', '=', sourcePath)]),
+            eb.and([eb('libraryId', '=', destinationLibrary.id), eb('originalPath', '=', destinationPath)]),
+          ]),
+        )
+        .orderBy('id')
+        .forUpdate()
+        .execute();
       const source = assets.find((asset) => asset.libraryId === sourceLibrary.id && asset.originalPath === sourcePath);
-      const destination = assets.find((asset) =>
-        asset.libraryId === destinationLibrary.id && asset.originalPath === destinationPath);
+      const destination = assets.find(
+        (asset) => asset.libraryId === destinationLibrary.id && asset.originalPath === destinationPath,
+      );
       if (!source) {
         if (destination && options.assetId === destination.id && destination.ownerId === destinationLibrary.ownerId) {
-          const people = await tx.selectFrom('person').innerJoin('asset_face', 'asset_face.personGroupId', 'person.personGroupId')
-            .select(['person.ownerId', 'person.personGroupId']).distinct()
-            .where('person.ownerId', '=', destinationLibrary.ownerId).where('asset_face.assetId', '=', destination.id)
-            .where('person.thumbnailPath', '=', '').execute();
-          return { assetId: destination.id, people };
+          const faces = await tx
+            .selectFrom('asset_face')
+            .select('id')
+            .where('assetId', '=', destination.id)
+            .where('personGroupId', 'is', null)
+            .where('deletedAt', 'is', null)
+            .execute();
+          const status = await tx
+            .selectFrom('asset_job_status')
+            .select('facesRecognizedAt')
+            .where('assetId', '=', destination.id)
+            .executeTakeFirst();
+          return {
+            assetId: destination.id,
+            faceIds: faces.map(({ id }) => id),
+            detectFaces: !status?.facesRecognizedAt,
+          };
         }
         return { error: 'Source asset not found; supply the original assetId to retry a completed move safely' };
       }
@@ -124,27 +152,50 @@ export class LibraryRepository {
       }
 
       const ownershipChanged = sourceLibrary.ownerId !== destinationLibrary.ownerId;
-      const people: { ownerId: string; personGroupId: string }[] = [];
+      let faceIds: string[] = [];
+      let detectFaces = false;
       if (ownershipChanged) {
         if (!experimental.allowOwnershipTransfer) {
           return { error: 'Cross-owner moves are disabled' };
         }
-        const livePhoto = await tx.selectFrom('asset').select('id')
-          .where('livePhotoVideoId', '=', source.id).executeTakeFirst();
+        const livePhoto = await tx
+          .selectFrom('asset')
+          .select('id')
+          .where('livePhotoVideoId', '=', source.id)
+          .executeTakeFirst();
         if (source.stackId || source.livePhotoVideoId || livePhoto) {
           return { error: 'Unstack the asset and unlink live-photo components before transferring ownership' };
         }
         if (experimental.addAlbumEditor) {
-          const albums = await tx.selectFrom('album_asset').select('albumId').where('assetId', '=', source.id).execute();
+          const albums = await tx
+            .selectFrom('album_asset')
+            .select('albumId')
+            .where('assetId', '=', source.id)
+            .execute();
           if (albums.length > 0) {
-            await tx.insertInto('album_user').values(albums.map(({ albumId }) => ({
-              albumId, userId: destinationLibrary.ownerId, role: AlbumUserRole.Editor,
-            }))).onConflict((oc) => oc.columns(['albumId', 'userId'])
-              .doUpdateSet({ role: AlbumUserRole.Editor }).where('album_user.role', '=', AlbumUserRole.Viewer)).execute();
+            await tx
+              .insertInto('album_user')
+              .values(
+                albums.map(({ albumId }) => ({
+                  albumId,
+                  userId: destinationLibrary.ownerId,
+                  role: AlbumUserRole.Editor,
+                })),
+              )
+              .onConflict((oc) =>
+                oc
+                  .columns(['albumId', 'userId'])
+                  .doUpdateSet({ role: AlbumUserRole.Editor })
+                  .where('album_user.role', '=', AlbumUserRole.Viewer),
+              )
+              .execute();
           }
         } else {
-          await tx.updateTable('album').set({ albumThumbnailAssetId: null })
-            .where('albumThumbnailAssetId', '=', source.id).execute();
+          await tx
+            .updateTable('album')
+            .set({ albumThumbnailAssetId: null })
+            .where('albumThumbnailAssetId', '=', source.id)
+            .execute();
           await tx.deleteFrom('album_asset').where('assetId', '=', source.id).execute();
         }
         if (!experimental.keepSharedLinks) {
@@ -152,41 +203,65 @@ export class LibraryRepository {
         }
         await tx.deleteFrom('tag_asset').where('assetId', '=', source.id).execute();
         await tx.deleteFrom('memory_asset').where('assetId', '=', source.id).execute();
+        await tx
+          .updateTable('person')
+          .set({ faceAssetId: null, thumbnailPath: '' })
+          .where('ownerId', '=', source.ownerId)
+          .where('faceAssetId', 'in', tx.selectFrom('asset_face').select('id').where('assetId', '=', source.id))
+          .execute();
         if (experimental.transferFaces) {
-          const faces = await tx.selectFrom('asset_face').innerJoin('person', 'person.personGroupId', 'asset_face.personGroupId')
-            .select(['asset_face.id', 'person.personGroupId', 'person.name', 'person.birthDate', 'person.color'])
-            .where('asset_face.assetId', '=', source.id).where('person.ownerId', '=', source.ownerId)
-            .where('asset_face.deletedAt', 'is', null).orderBy('asset_face.id').execute();
-          for (const face of faces) {
-            const person = await tx.insertInto('person').values({
-              ownerId: destinationLibrary.ownerId, personGroupId: face.personGroupId, name: face.name,
-              birthDate: face.birthDate, color: face.color, faceAssetId: face.id,
-            }).onConflict((oc) => oc.columns(['ownerId', 'personGroupId']).doNothing())
-              .returning(['ownerId', 'personGroupId']).executeTakeFirst();
-            if (person) {
-              people.push(person);
-            }
-          }
+          await tx
+            .deleteFrom('asset_face')
+            .where('assetId', '=', source.id)
+            .where('deletedAt', 'is not', null)
+            .execute();
+          const faces = await tx
+            .updateTable('asset_face')
+            .set({ personGroupId: null })
+            .where('assetId', '=', source.id)
+            .where('deletedAt', 'is', null)
+            .returning('id')
+            .execute();
+          faceIds = faces.map(({ id }) => id);
+          const status = await tx
+            .selectFrom('asset_job_status')
+            .select('facesRecognizedAt')
+            .where('assetId', '=', source.id)
+            .executeTakeFirst();
+          detectFaces = !status?.facesRecognizedAt;
         } else {
           await tx.deleteFrom('asset_face').where('assetId', '=', source.id).execute();
-          await tx.updateTable('asset_job_status').set({ facesRecognizedAt: null }).where('assetId', '=', source.id).execute();
+          await tx
+            .updateTable('asset_job_status')
+            .set({ facesRecognizedAt: null })
+            .where('assetId', '=', source.id)
+            .execute();
+          detectFaces = true;
         }
         await tx.insertInto('asset_audit').values({ assetId: source.id, ownerId: source.ownerId }).execute();
       }
-      await tx.deleteFrom('asset_file').where('assetId', '=', source.id).where('type', '=', AssetFileType.Sidecar).execute();
-      await tx.updateTable('asset').set({
-        libraryId: destinationLibrary.id,
-        ownerId: destinationLibrary.ownerId,
-        originalPath: destinationPath,
-        originalFileName: basename(destinationPath),
-        checksum: options.checksum,
-        checksumAlgorithm: ChecksumAlgorithm.sha1Path,
-        fileModifiedAt: options.fileModifiedAt,
-        isOffline: false,
-        deletedAt: null,
-        ...(ownershipChanged && { isFavorite: false, duplicateId: null }),
-      }).where('id', '=', source.id).execute();
-      return { assetId: source.id, people };
+      await tx
+        .deleteFrom('asset_file')
+        .where('assetId', '=', source.id)
+        .where('type', '=', AssetFileType.Sidecar)
+        .execute();
+      await tx
+        .updateTable('asset')
+        .set({
+          libraryId: destinationLibrary.id,
+          ownerId: destinationLibrary.ownerId,
+          originalPath: destinationPath,
+          originalFileName: basename(destinationPath),
+          checksum: options.checksum,
+          checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+          fileModifiedAt: options.fileModifiedAt,
+          isOffline: false,
+          deletedAt: null,
+          ...(ownershipChanged && { isFavorite: false, duplicateId: null }),
+        })
+        .where('id', '=', source.id)
+        .execute();
+      return { assetId: source.id, faceIds, detectFaces };
     });
   }
 

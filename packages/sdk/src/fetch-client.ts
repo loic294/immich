@@ -184,6 +184,16 @@ export type AdminConfigJobDto = {
     videoConversion: AdminConfigJobSettingsDto;
     workflow: AdminConfigJobSettingsDto;
 };
+export type AdminConfigLibraryExperimentalDto = {
+    /** Keep album membership and add the destination owner as an editor */
+    addAlbumEditor: boolean;
+    /** Allow moves between library owners */
+    allowOwnershipTransfer: boolean;
+    /** Keep individual shared links when ownership changes */
+    keepSharedLinks: boolean;
+    /** Reuse face detections and recognize people for the destination owner */
+    transferFaces: boolean;
+};
 export type AdminConfigLibraryScanDto = {
     /** Cron expression */
     cronExpression: string;
@@ -195,6 +205,7 @@ export type AdminConfigLibraryWatchDto = {
     enabled: boolean;
 };
 export type AdminConfigLibraryDto = {
+    experimental?: AdminConfigLibraryExperimentalDto;
     scan: AdminConfigLibraryScanDto;
     watch: AdminConfigLibraryWatchDto;
 };
@@ -1897,6 +1908,24 @@ export type UpdateLibraryDto = {
     /** Library name */
     name?: string;
 };
+export type LibraryFilePathDto = {
+    /** Absolute file path within the library import paths */
+    path: string;
+};
+export type LibraryFileMoveDto = {
+    /** Expected asset ID; supply for safe cross-library move retries */
+    assetId?: string;
+    /** Destination library ID; defaults to the source library */
+    destinationLibraryId?: string;
+    /** Absolute destination file path within the library import paths */
+    destinationPath: string;
+    /** Absolute source file path within the library import paths */
+    sourcePath: string;
+};
+export type LibraryScanDto = {
+    /** Folder to scan within the library import paths */
+    path?: string;
+};
 export type LibraryStatsResponseDto = {
     /** Number of photos */
     photos: number;
@@ -2320,8 +2349,11 @@ export type PublicConfigDto = {
 export type QueueResponseDto = {
     /** Whether the queue is paused */
     isPaused: boolean;
+    /** Whether the queue currently has active jobs */
+    isRunning: boolean;
     name: QueueName;
     statistics: QueueStatisticsDto;
+    status: QueueStatus;
 };
 export type QueueUpdateDto = {
     /** Whether to pause the queue */
@@ -5806,15 +5838,56 @@ export function updateLibrary({ id, updateLibraryDto }: {
     })));
 }
 /**
+ * Synchronize an added external library file
+ */
+export function syncFileAdd({ id, libraryFilePathDto }: {
+    id: string;
+    libraryFilePathDto: LibraryFilePathDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/files/add`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryFilePathDto
+    })));
+}
+/**
+ * Synchronize a moved external library file
+ */
+export function syncFileMove({ id, libraryFileMoveDto }: {
+    id: string;
+    libraryFileMoveDto: LibraryFileMoveDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/files/move`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryFileMoveDto
+    })));
+}
+/**
+ * Synchronize a removed external library file
+ */
+export function syncFileRemove({ id, libraryFilePathDto }: {
+    id: string;
+    libraryFilePathDto: LibraryFilePathDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/files/remove`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: libraryFilePathDto
+    })));
+}
+/**
  * Scan a library
  */
-export function scanLibrary({ id }: {
+export function scanLibrary({ id, libraryScanDto }: {
     id: string;
+    libraryScanDto: LibraryScanDto;
 }, opts?: Oazapfts.RequestOpts) {
-    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/scan`, {
+    return oazapfts.ok(oazapfts.fetchText(`/libraries/${encodeURIComponent(id)}/scan`, oazapfts.json({
         ...opts,
-        method: "POST"
-    }));
+        method: "POST",
+        body: libraryScanDto
+    })));
 }
 /**
  * Retrieve library statistics
@@ -8702,6 +8775,11 @@ export enum WorkflowTrigger {
     AssetMetadataExtraction = "AssetMetadataExtraction",
     AssetOcrExtraction = "AssetOcrExtraction",
     AssetTagged = "AssetTagged"
+}
+export enum QueueStatus {
+    Paused = "paused",
+    Running = "running",
+    Idle = "idle"
 }
 export enum QueueJobStatus {
     Active = "active",

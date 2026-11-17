@@ -69,7 +69,7 @@ export const getLibraryActions = ($t: MessageFormatter, library: LibraryResponse
   const Scan: ActionItem = {
     icon: mdiSync,
     title: $t('scan_library'),
-    onAction: () => executeMutation(scanLibraryMutation, [{ id: library.id }]),
+    onAction: () => executeMutation(scanLibraryMutation, [{ id: library.id, libraryScanDto: {} }]),
     shortcuts: { shift: true, key: 'r' },
   };
 

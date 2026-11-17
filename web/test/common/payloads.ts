@@ -284,7 +284,16 @@ const adminConfig = (overrides: Partial<ResponseOf<'getAdminConfig'>> = {}): Res
   },
   trash: { enabled: true, days: 30 },
   theme: { customCss: '' },
-  library: { scan: { enabled: true, cronExpression: '0 0 * * *' }, watch: { enabled: false } },
+  library: {
+    scan: { enabled: true, cronExpression: '0 0 * * *' },
+    watch: { enabled: false },
+    experimental: {
+      allowOwnershipTransfer: false,
+      addAlbumEditor: false,
+      keepSharedLinks: false,
+      transferFaces: false,
+    },
+  },
   server: { externalDomain: '', loginPageMessage: '', publicUsers: true },
   notifications: {
     smtp: {
