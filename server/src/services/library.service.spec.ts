@@ -1179,6 +1179,60 @@ describe(LibraryService.name, () => {
     });
   });
 
+  describe('external library file synchronization', () => {
+    it('should synchronize an added asset', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.stat.mockResolvedValue({ isFile: () => true, mtime: newDate() } as Stats);
+      mocks.asset.getByLibraryIdAndOriginalPath.mockResolvedValue(undefined);
+      mocks.asset.createAll.mockResolvedValue(['asset-id']);
+
+      await sut.syncFileAdd(library.id, { path: '/mnt/library/photo.jpg' });
+
+      expect(mocks.asset.createAll).toHaveBeenCalledTimes(1);
+      expect(mocks.job.queueAll).toHaveBeenCalled();
+    });
+
+    it('should ignore a repeat remove notification', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.stat.mockRejectedValue({ code: 'ENOENT' });
+      mocks.asset.getByLibraryIdAndOriginalPath.mockResolvedValue(undefined);
+
+      await sut.syncFileRemove(library.id, { path: '/mnt/library/photo.jpg' });
+
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+    });
+
+    it('should update the original path after a move notification', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+      const sourceAsset = AssetFactory.create({ id: 'asset-id', originalPath: '/mnt/library/source/photo.jpg' });
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.stat.mockImplementation((filePath): Promise<Stats> => {
+        if (filePath === '/mnt/library/source/photo.jpg') {
+          throw { code: 'ENOENT' };
+        }
+        return Promise.resolve({ isFile: () => true, mtime: newDate() } as Stats);
+      });
+      mocks.asset.getByLibraryIdAndOriginalPath.mockImplementation((_, filePath) =>
+        Promise.resolve(filePath === sourceAsset.originalPath ? sourceAsset : undefined),
+      );
+
+      await sut.syncFileMove(library.id, {
+        sourcePath: '/mnt/library/source/photo.jpg',
+        destinationPath: '/mnt/library/destination/photo.jpg',
+      });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'asset-id',
+          originalPath: '/mnt/library/destination/photo.jpg',
+          originalFileName: 'photo.jpg',
+        }),
+      );
+    });
+  });
+
   describe('queueScan', () => {
     it('should queue a library scan', async () => {
       const library = factory.library();
