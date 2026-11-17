@@ -882,6 +882,14 @@ export enum QueueName {
 
 export const QueueNameSchema = z.enum(QueueName).describe('Queue name').meta({ id: 'QueueName' });
 
+export enum QueueStatus {
+  Paused = 'paused',
+  Running = 'running',
+  Idle = 'idle',
+}
+
+export const QueueStatusSchema = z.enum(QueueStatus).describe('Queue status').meta({ id: 'QueueStatus' });
+
 export enum QueueJobStatus {
   Active = 'active',
   Failed = 'failed',
