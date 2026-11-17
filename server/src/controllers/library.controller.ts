@@ -4,6 +4,7 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CreateLibraryDto,
   LibraryResponseDto,
+  LibraryScanDto,
   LibraryStatsResponseDto,
   UpdateLibraryDto,
   ValidateLibraryDto,
@@ -115,7 +116,7 @@ export class LibraryController {
     description: 'Queue a scan for the external library to find and import new assets.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  scanLibrary(@Param() { id }: UUIDParamDto): Promise<void> {
-    return this.service.queueScan(id);
+  scanLibrary(@Param() { id }: UUIDParamDto, @Body() dto: LibraryScanDto): Promise<void> {
+    return this.service.queueScan(id, dto);
   }
 }
