@@ -101,7 +101,10 @@ jobs:
             device: openvino
             suffixes: '-openvino'
             platforms: linux/amd64
-            runner-mapping: '{"linux/amd64": "pokedex-large"}'
+            runner-mapping: >-
+              ${{ github.repository == 'immich-app/immich' &&
+              '{"linux/amd64": "pokedex-large"}' ||
+              '{"linux/amd64": "ubuntu-latest"}' }}
           - image: immich-machine-learning
             device: armnn
             suffixes: '-armnn'
@@ -114,7 +117,10 @@ jobs:
             device: rocm
             suffixes: '-rocm'
             platforms: linux/amd64
-            runner-mapping: '{"linux/amd64": "pokedex-large"}'
+            runner-mapping: >-
+              ${{ github.repository == 'immich-app/immich' &&
+              '{"linux/amd64": "pokedex-large"}' ||
+              '{"linux/amd64": "ubuntu-latest"}' }}
     steps:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
