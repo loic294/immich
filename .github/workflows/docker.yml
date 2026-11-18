@@ -86,7 +86,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    if: ${{ fromJSON(needs.pre-job.outputs.should_run).machine-learning == false && !github.event.pull_request.head.repo.fork && !startsWith(github.ref, 'refs/heads/release/') && !startsWith(github.base_ref, 'release/') }}
+    if: ${{ fromJSON(needs.pre-job.outputs.should_run).machine-learning == false && (matrix.forkBuild != false || github.repository == 'immich-app/immich') && !github.event.pull_request.head.repo.fork && !startsWith(github.ref, 'refs/heads/release/') && !startsWith(github.base_ref, 'release/') }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -101,10 +101,8 @@ jobs:
             device: openvino
             suffixes: '-openvino'
             platforms: linux/amd64
-            runner-mapping: >-
-              ${{ github.repository == 'immich-app/immich' &&
-              '{"linux/amd64": "pokedex-large"}' ||
-              '{"linux/amd64": "ubuntu-latest"}' }}
+            runner-mapping: '{"linux/amd64": "pokedex-large"}'
+            forkBuild: false
           - image: immich-machine-learning
             device: armnn
             suffixes: '-armnn'
@@ -170,7 +168,7 @@ jobs:
   machine-learning:
     name: Build and Push ML
     needs: pre-job
-    if: ${{ fromJSON(needs.pre-job.outputs.should_run).machine-learning == true }}
+    if: ${{ fromJSON(needs.pre-job.outputs.should_run).machine-learning == true && (matrix.forkBuild != false || github.repository == 'immich-app/immich') }}
     strategy:
       fail-fast: false
       matrix:
