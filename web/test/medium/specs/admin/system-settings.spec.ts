@@ -2,6 +2,43 @@ import { Route } from '#lib/route.ts';
 import { expect, test } from '#test/medium/fixtures.ts';
 
 test.describe('system settings', () => {
+  for (const viewport of [
+    { width: 1440, height: 1100 },
+    { width: 390, height: 844 },
+  ]) {
+    test(`experimental library settings remain usable at ${viewport.width}px`, async ({ page, api }, testInfo) => {
+      await page.setViewportSize(viewport);
+      await page.goto(Route.systemSettings());
+      await page.getByRole('button', { name: 'admin.library_settings', exact: false }).click();
+      await page.getByRole('button', { name: 'admin.library_experimental', exact: false }).click();
+      const ownership = page.getByRole('switch', { name: 'admin.library_move_ownership', exact: true });
+      await expect(ownership).toBeVisible();
+      await ownership.click();
+      const faces = page.getByRole('switch', { name: 'admin.library_move_faces', exact: true });
+      await faces.click();
+      await expect(faces).toBeChecked();
+      await page.evaluate(async () => {
+        await Promise.all(document.getAnimations().map((animation) => animation.finished));
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath('experimental-library-settings.png'), fullPage: true });
+      await page.getByRole('button', { name: 'save', exact: true }).click();
+      await expect.poll(() => api.updateAdminConfig.calls.length).toBe(1);
+      expect(api.updateAdminConfig).toHaveBeenCalledWith({
+        body: expect.objectContaining({
+          library: expect.objectContaining({
+            experimental: {
+              allowOwnershipTransfer: true,
+              addAlbumEditor: false,
+              keepSharedLinks: false,
+              transferFaces: true,
+            },
+          }),
+        }),
+      });
+    });
+  }
+
   test('previews an email template', async ({ page, api }) => {
     api.on({
       previewNotificationTemplateAdmin: () => ({

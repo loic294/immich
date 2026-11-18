@@ -8,6 +8,7 @@ import {
   IntegrityReport,
   MemoryType,
   PersonUpdateStrategy,
+  QueueStatus,
   ReactionType,
   SharedLinkType,
   UserAvatarColor,
@@ -417,10 +418,13 @@ const sharedLink = (overrides: Partial<SharedLinkResponseDto> = {}): SharedLinkR
 
 const queue = ({
   statistics,
+  isPaused = false,
   ...overrides
 }: Partial<Omit<QueueResponseDto, 'statistics'>> &
   Pick<QueueResponseDto, 'name'> & { statistics?: Partial<QueueStatisticsDto> }): QueueResponseDto => ({
-  isPaused: false,
+  isPaused,
+  isRunning: (statistics?.active ?? 0) > 0,
+  status: isPaused ? QueueStatus.Paused : (statistics?.active ?? 0) > 0 ? QueueStatus.Running : QueueStatus.Idle,
   statistics: { active: 0, completed: 0, delayed: 0, failed: 0, paused: 0, waiting: 0, ...statistics },
   ...overrides,
 });

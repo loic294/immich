@@ -26,6 +26,26 @@ const UpdateLibrarySchema = z
   })
   .meta({ id: 'UpdateLibraryDto' });
 
+const LibraryScanSchema = z
+  .object({
+    path: z.string().min(1).optional().describe('Folder to scan within the library import paths'),
+  })
+  .meta({ id: 'LibraryScanDto' });
+
+const LibraryFilePathSchema = z
+  .object({
+    path: z.string().min(1).describe('Absolute file path within the library import paths'),
+  })
+  .meta({ id: 'LibraryFilePathDto' });
+
+const LibraryFileMoveSchema = z
+  .object({
+    sourcePath: z.string().min(1).describe('Absolute source file path within the library import paths'),
+    destinationPath: z.string().min(1).describe('Absolute destination file path within the library import paths'),
+    destinationLibraryId: z.uuidv4().optional().describe('Destination library ID; defaults to the source library'),
+    assetId: z.uuidv4().optional().describe('Expected asset ID; supply for safe cross-library move retries'),
+  })
+  .meta({ id: 'LibraryFileMoveDto' });
 export interface CrawlOptionsDto {
   pathsToCrawl: string[];
   includeHidden?: boolean;
@@ -85,6 +105,9 @@ const LibraryStatsResponseSchema = z
 
 export class CreateLibraryDto extends createZodDto(CreateLibrarySchema) {}
 export class UpdateLibraryDto extends createZodDto(UpdateLibrarySchema) {}
+export class LibraryScanDto extends createZodDto(LibraryScanSchema) {}
+export class LibraryFilePathDto extends createZodDto(LibraryFilePathSchema) {}
+export class LibraryFileMoveDto extends createZodDto(LibraryFileMoveSchema) {}
 export class ValidateLibraryDto extends createZodDto(ValidateLibrarySchema) {}
 export class ValidateLibraryResponseDto extends createZodDto(ValidateLibraryResponseSchema) {}
 export class ValidateLibraryImportPathResponseDto extends createZodDto(ValidateLibraryImportPathResponseSchema) {}

@@ -183,6 +183,25 @@ describe(LibraryService.name, () => {
       });
     });
 
+    it('should crawl only the requested folder', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.walk.mockImplementation(mockWalk);
+      mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      mocks.asset.filterNewExternalAssetPaths.mockResolvedValue(['/data/library/photos/photo.jpg']);
+
+      await sut.handleQueueSyncFiles({ id: library.id, path: '/mnt/library/photos' });
+
+      expect(mocks.storage.walk).toHaveBeenCalledWith({
+        pathsToCrawl: ['/mnt/library/photos'],
+        exclusionPatterns: [],
+        includeHidden: false,
+        take: JOBS_LIBRARY_PAGINATION_SIZE,
+      });
+    });
+
     it('should fail when library is not found', async () => {
       const library = factory.library({ importPaths: ['/foo', '/bar'] });
 
@@ -1160,6 +1179,176 @@ describe(LibraryService.name, () => {
     });
   });
 
+  describe('external library file synchronization', () => {
+    const sourcePath = '/mnt/source/photo.jpg';
+    const destinationPath = '/mnt/destination/photo.jpg';
+
+    const setupCrossLibraryMove = (allowOwnershipTransfer: boolean) => {
+      const source = factory.library({ importPaths: ['/mnt/source'] });
+      const destination = factory.library({ importPaths: ['/mnt/destination'] });
+      mocks.library.get.mockImplementation((id) => Promise.resolve(id === source.id ? source : destination));
+      mocks.systemMetadata.get.mockResolvedValue({
+        library: { experimental: { ...defaults.library.experimental, allowOwnershipTransfer } },
+      });
+      mocks.storage.stat.mockImplementation((filePath): Promise<Stats> =>
+        filePath === sourcePath
+          ? Promise.reject({ code: 'ENOENT' })
+          : Promise.resolve({ isFile: () => true, mtime: newDate() } as Stats),
+      );
+      return { source, destination };
+    };
+
+    it('should require opt-in before transferring between owners', async () => {
+      const { source, destination } = setupCrossLibraryMove(false);
+      await expect(
+        sut.syncFileMove(source.id, {
+          sourcePath,
+          destinationPath,
+          destinationLibraryId: destination.id,
+        }),
+      ).rejects.toThrow('Cross-owner moves are disabled');
+      expect(mocks.library.moveAsset).not.toHaveBeenCalled();
+    });
+
+    it('should synchronize cross-owner moves and migrate generated files', async () => {
+      const { source, destination } = setupCrossLibraryMove(true);
+      const assetId = newUuid();
+      mocks.library.moveAsset.mockResolvedValue({ assetId, faceIds: [], detectFaces: true });
+      await sut.syncFileMove(source.id, { sourcePath, destinationPath, destinationLibraryId: destination.id, assetId });
+      expect(mocks.library.moveAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceLibrary: source,
+          destinationLibrary: destination,
+          sourcePath,
+          destinationPath,
+          assetId,
+        }),
+      );
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetFileMigration, data: { id: assetId } },
+        { name: JobName.SidecarCheck, data: { id: assetId } },
+        { name: JobName.AssetDetectDuplicates, data: { id: assetId } },
+        { name: JobName.AssetDetectFaces, data: { id: assetId } },
+      ]);
+    });
+
+    it('should reject a cross-library destination outside its import paths', async () => {
+      const { source, destination } = setupCrossLibraryMove(true);
+      await expect(
+        sut.syncFileMove(source.id, {
+          sourcePath,
+          destinationPath: '/mnt/elsewhere/photo.jpg',
+          destinationLibraryId: destination.id,
+        }),
+      ).rejects.toThrow('File path must be inside one of the library import paths');
+      expect(mocks.library.moveAsset).not.toHaveBeenCalled();
+    });
+
+    it('should recognize retained faces without repeating face detection', async () => {
+      const { source, destination } = setupCrossLibraryMove(true);
+      const assetId = newUuid();
+      const faceId = newUuid();
+      mocks.library.moveAsset.mockResolvedValue({ assetId, faceIds: [faceId], detectFaces: false });
+
+      await sut.syncFileMove(source.id, { sourcePath, destinationPath, destinationLibraryId: destination.id, assetId });
+
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: JobName.AssetFileMigration, data: { id: assetId } },
+        { name: JobName.SidecarCheck, data: { id: assetId } },
+        { name: JobName.AssetDetectDuplicates, data: { id: assetId } },
+        { name: JobName.FacialRecognition, data: { id: faceId } },
+      ]);
+    });
+
+    it('should report conflicting moves without queuing jobs', async () => {
+      const { source, destination } = setupCrossLibraryMove(true);
+      mocks.library.moveAsset.mockResolvedValue({ error: 'Destination already has an asset' });
+      await expect(
+        sut.syncFileMove(source.id, {
+          sourcePath,
+          destinationPath,
+          destinationLibraryId: destination.id,
+        }),
+      ).rejects.toThrow('Destination already has an asset');
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('should synchronize an added asset', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.stat.mockResolvedValue({ isFile: () => true, mtime: newDate() } as Stats);
+      mocks.asset.getByLibraryIdAndOriginalPath.mockResolvedValue(undefined);
+      mocks.asset.createAll.mockResolvedValue(['asset-id']);
+
+      await sut.syncFileAdd(library.id, { path: '/mnt/library/photo.jpg' });
+
+      expect(mocks.asset.createAll).toHaveBeenCalledTimes(1);
+      expect(mocks.job.queueAll).toHaveBeenCalled();
+    });
+
+    it('should ignore a repeat remove notification', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.stat.mockRejectedValue({ code: 'ENOENT' });
+      mocks.asset.getByLibraryIdAndOriginalPath.mockResolvedValue(undefined);
+
+      await sut.syncFileRemove(library.id, { path: '/mnt/library/photo.jpg' });
+
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+    });
+
+    it('should update the original path after a move notification', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+      const sourceAsset = AssetFactory.create({ id: 'asset-id', originalPath: '/mnt/library/source/photo.jpg' });
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.stat.mockImplementation((filePath): Promise<Stats> => {
+        if (filePath === '/mnt/library/source/photo.jpg') {
+          throw { code: 'ENOENT' };
+        }
+        return Promise.resolve({ isFile: () => true, mtime: newDate() } as Stats);
+      });
+      mocks.asset.getByLibraryIdAndOriginalPath.mockImplementation((_, filePath) =>
+        Promise.resolve(filePath === sourceAsset.originalPath ? sourceAsset : undefined),
+      );
+
+      await sut.syncFileMove(library.id, {
+        sourcePath: '/mnt/library/source/photo.jpg',
+        destinationPath: '/mnt/library/destination/photo.jpg',
+      });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'asset-id',
+          originalPath: '/mnt/library/destination/photo.jpg',
+          originalFileName: 'photo.jpg',
+        }),
+      );
+    });
+
+    it('should preserve both assets when a same-library move conflicts', async () => {
+      const library = factory.library({ importPaths: ['/mnt'] });
+      const sourceAsset = AssetFactory.create({ originalPath: sourcePath });
+      const destinationAsset = AssetFactory.create({ originalPath: destinationPath });
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.stat.mockImplementation((filePath): Promise<Stats> =>
+        filePath === sourcePath
+          ? Promise.reject({ code: 'ENOENT' })
+          : Promise.resolve({ isFile: () => true, mtime: newDate() } as Stats),
+      );
+      mocks.asset.getByLibraryIdAndOriginalPath.mockImplementation((_, filePath) =>
+        Promise.resolve(filePath === sourcePath ? sourceAsset : destinationAsset),
+      );
+
+      await expect(sut.syncFileMove(library.id, { sourcePath, destinationPath })).rejects.toThrow(
+        'Destination already has an asset',
+      );
+
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+  });
+
   describe('queueScan', () => {
     it('should queue a library scan', async () => {
       const library = factory.library();
@@ -1177,6 +1366,33 @@ describe(LibraryService.name, () => {
         name: JobName.LibrarySyncAssetsQueueAll,
         data: { id: library.id },
       });
+    });
+
+    it('should queue a folder scan without queueing library-wide asset reconciliation', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+
+      await sut.queueScan(library.id, { path: '/mnt/library/photos' });
+
+      expect(mocks.job.queue).toHaveBeenCalledTimes(1);
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.LibrarySyncFilesQueueAll,
+        data: { id: library.id, path: '/mnt/library/photos' },
+      });
+    });
+
+    it('should reject a folder outside the library import paths', async () => {
+      const library = factory.library({ importPaths: ['/data/library'] });
+
+      mocks.library.get.mockResolvedValue(library);
+
+      await expect(sut.queueScan(library.id, { path: '/tmp/photos' })).rejects.toThrow(
+        'Scan path must be inside one of the library import paths',
+      );
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 

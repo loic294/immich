@@ -91,6 +91,41 @@
           </div>
         </SettingAccordion>
 
+        {#if configToEdit.library.experimental}
+          <SettingAccordion
+            key="library-experimental-moves"
+            title={$t('admin.library_experimental')}
+            subtitle={$t('admin.library_experimental_description')}
+          >
+            <div class="ms-4 mt-4 flex flex-col gap-4">
+              <SettingSwitch
+                title={$t('admin.library_move_ownership')}
+                subtitle={$t('admin.library_move_ownership_description')}
+                {disabled}
+                bind:checked={configToEdit.library.experimental.allowOwnershipTransfer}
+              />
+              <SettingSwitch
+                title={$t('admin.library_move_album_editor')}
+                subtitle={$t('admin.library_move_album_editor_description')}
+                disabled={disabled || !configToEdit.library.experimental.allowOwnershipTransfer}
+                bind:checked={configToEdit.library.experimental.addAlbumEditor}
+              />
+              <SettingSwitch
+                title={$t('admin.library_move_shared_links')}
+                subtitle={$t('admin.library_move_shared_links_description')}
+                disabled={disabled || !configToEdit.library.experimental.allowOwnershipTransfer}
+                bind:checked={configToEdit.library.experimental.keepSharedLinks}
+              />
+              <SettingSwitch
+                title={$t('admin.library_move_faces')}
+                subtitle={$t('admin.library_move_faces_description')}
+                disabled={disabled || !configToEdit.library.experimental.allowOwnershipTransfer}
+                bind:checked={configToEdit.library.experimental.transferFaces}
+              />
+            </div>
+          </SettingAccordion>
+        {/if}
+
         <SettingButtonsRow bind:configToEdit keys={['library']} {disabled} />
       </div>
     </form>

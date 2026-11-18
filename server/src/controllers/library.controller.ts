@@ -3,7 +3,10 @@ import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  LibraryFileMoveDto,
+  LibraryFilePathDto,
   LibraryResponseDto,
+  LibraryScanDto,
   LibraryStatsResponseDto,
   UpdateLibraryDto,
   ValidateLibraryDto,
@@ -107,6 +110,43 @@ export class LibraryController {
     return this.service.getStatistics(id);
   }
 
+  @Post(':id/files/add')
+  @Authenticated({ permission: Permission.LibraryUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Synchronize an added external library file',
+    description: 'Synchronize an external library asset after it has been added to the filesystem.',
+    history: new HistoryBuilder().added('v4.0.0').alpha('v4.0.0'),
+  })
+  syncFileAdd(@Param() { id }: UUIDParamDto, @Body() dto: LibraryFilePathDto): Promise<void> {
+    return this.service.syncFileAdd(id, dto);
+  }
+
+  @Post(':id/files/remove')
+  @Authenticated({ permission: Permission.LibraryUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Synchronize a removed external library file',
+    description: 'Synchronize an external library asset after it has been removed from the filesystem.',
+    history: new HistoryBuilder().added('v4.0.0').alpha('v4.0.0'),
+  })
+  syncFileRemove(@Param() { id }: UUIDParamDto, @Body() dto: LibraryFilePathDto): Promise<void> {
+    return this.service.syncFileRemove(id, dto);
+  }
+
+  @Post(':id/files/move')
+  @Authenticated({ permission: Permission.LibraryUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Synchronize a moved external library file',
+    description:
+      'Synchronize an external library asset after it has been moved on the filesystem, optionally to another library. Cross-owner moves follow the experimental admin settings. Requires an administrator and library.update permission for API keys.',
+    history: new HistoryBuilder().added('v4.0.0').alpha('v4.0.0'),
+  })
+  syncFileMove(@Param() { id }: UUIDParamDto, @Body() dto: LibraryFileMoveDto): Promise<void> {
+    return this.service.syncFileMove(id, dto);
+  }
+
   @Post(':id/scan')
   @Authenticated({ permission: Permission.LibraryUpdate, admin: true })
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -115,7 +155,7 @@ export class LibraryController {
     description: 'Queue a scan for the external library to find and import new assets.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  scanLibrary(@Param() { id }: UUIDParamDto): Promise<void> {
-    return this.service.queueScan(id);
+  scanLibrary(@Param() { id }: UUIDParamDto, @Body() dto: LibraryScanDto): Promise<void> {
+    return this.service.queueScan(id, dto);
   }
 }

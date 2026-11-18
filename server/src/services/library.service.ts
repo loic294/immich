@@ -1,14 +1,16 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import { R_OK } from 'node:constants';
 import { Stats } from 'node:fs';
-import path, { isAbsolute, parse } from 'node:path';
+import path, { basename, isAbsolute, parse } from 'node:path';
 import picomatch from 'picomatch';
 import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  LibraryFileMoveDto,
+  LibraryFilePathDto,
   LibraryResponseDto,
   LibraryStatsResponseDto,
   UpdateLibraryDto,
@@ -215,6 +217,190 @@ export class LibraryService extends BaseService {
   async getAll(): Promise<LibraryResponseDto[]> {
     const libraries = await this.libraryRepository.getAll(false);
     return libraries.map((library) => mapLibrary(library));
+  }
+
+  private normalizeLibraryFilePath(
+    library: { importPaths: string[]; exclusionPatterns: string[] },
+    filePath: string,
+  ): string {
+    const normalizedPath = path.normalize(filePath);
+    if (!path.isAbsolute(normalizedPath)) {
+      throw new BadRequestException('File path must be absolute');
+    }
+    if (!this.isWithinImportPath(normalizedPath, library.importPaths)) {
+      throw new BadRequestException('File path must be inside one of the library import paths');
+    }
+    if (library.exclusionPatterns.some((pattern) => picomatch.isMatch(normalizedPath, pattern))) {
+      throw new BadRequestException('File path is excluded by the library settings');
+    }
+    return normalizedPath;
+  }
+
+  async syncFileAdd(id: string, dto: LibraryFilePathDto): Promise<void> {
+    const library = await this.findOrFail(id);
+    const filePath = this.normalizeLibraryFilePath(library, dto.path);
+
+    let stat: Stats;
+    try {
+      stat = await this.storageRepository.stat(filePath);
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        throw new BadRequestException('Added file does not exist');
+      }
+      throw error;
+    }
+    if (!stat.isFile()) {
+      throw new BadRequestException('Added path is not a file');
+    }
+    if (!mimeTypes.isAsset(filePath)) {
+      throw new BadRequestException('Added file is not a supported image or video');
+    }
+
+    const existing = await this.assetRepository.getByLibraryIdAndOriginalPath(library.id, filePath);
+    if (existing) {
+      if (existing.isOffline) {
+        await this.assetRepository.update({ id: existing.id, isOffline: false, deletedAt: null });
+        await this.queuePostSyncJobs([existing.id]);
+      }
+      return;
+    }
+
+    const asset = await this.processEntity(filePath, library.ownerId, library.id);
+    const assetIds = await this.assetRepository.createAll([asset]);
+    await this.queuePostSyncJobs(assetIds);
+  }
+
+  async syncFileRemove(id: string, dto: LibraryFilePathDto): Promise<void> {
+    const library = await this.findOrFail(id);
+    const filePath = this.normalizeLibraryFilePath(library, dto.path);
+
+    try {
+      await this.storageRepository.stat(filePath);
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+      return this.removeAssetByPath(library.id, filePath);
+    }
+
+    throw new BadRequestException('Removed file still exists');
+  }
+
+  private async removeAssetByPath(libraryId: string, filePath: string): Promise<void> {
+    const asset = await this.assetRepository.getByLibraryIdAndOriginalPath(libraryId, filePath);
+    if (asset) {
+      await this.assetRepository.remove(asset);
+    }
+  }
+
+  async syncFileMove(id: string, dto: LibraryFileMoveDto): Promise<void> {
+    const library = await this.findOrFail(id);
+    const destinationLibrary =
+      dto.destinationLibraryId && dto.destinationLibraryId !== id
+        ? await this.findOrFail(dto.destinationLibraryId)
+        : library;
+    const sourcePath = this.normalizeLibraryFilePath(library, dto.sourcePath);
+    const destinationPath = this.normalizeLibraryFilePath(destinationLibrary, dto.destinationPath);
+    const config = destinationLibrary.id === library.id ? undefined : await this.getConfig({ withCache: false });
+    const experimental = config?.library.experimental;
+    if (experimental && library.ownerId !== destinationLibrary.ownerId && !experimental.allowOwnershipTransfer) {
+      throw new BadRequestException('Cross-owner moves are disabled in the experimental external library settings');
+    }
+
+    let destinationStat: Stats;
+    try {
+      destinationStat = await this.storageRepository.stat(destinationPath);
+    } catch (error: any) {
+      if (error.code === 'ENOENT') {
+        throw new BadRequestException('Moved destination file does not exist');
+      }
+      throw error;
+    }
+    if (!destinationStat.isFile()) {
+      throw new BadRequestException('Moved destination path is not a file');
+    }
+    if (!mimeTypes.isAsset(destinationPath)) {
+      throw new BadRequestException('Moved destination file is not a supported image or video');
+    }
+
+    try {
+      await this.storageRepository.stat(sourcePath);
+    } catch (error: any) {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+      if (experimental) {
+        const result = await this.libraryRepository.moveAsset({
+          sourceLibrary: library,
+          destinationLibrary,
+          sourcePath,
+          destinationPath,
+          assetId: dto.assetId,
+          checksum: this.cryptoRepository.hashSha1(`path:${destinationPath}`),
+          fileModifiedAt: destinationStat.mtime,
+          experimental,
+        });
+        if ('error' in result) {
+          throw new ConflictException(result.error);
+        }
+        await this.jobRepository.queueAll([
+          { name: JobName.AssetFileMigration, data: { id: result.assetId } },
+          { name: JobName.SidecarCheck, data: { id: result.assetId } },
+          { name: JobName.AssetDetectDuplicates, data: { id: result.assetId } },
+          ...result.faceIds.map((id) => ({ name: JobName.FacialRecognition, data: { id } }) as const),
+          ...(result.detectFaces ? [{ name: JobName.AssetDetectFaces, data: { id: result.assetId } } as const] : []),
+        ]);
+        return;
+      }
+      return this.syncMovedDestination(library, sourcePath, destinationPath, destinationStat, dto.assetId);
+    }
+
+    throw new BadRequestException('Moved source file still exists');
+  }
+
+  private async syncMovedDestination(
+    library: { id: string; ownerId: string },
+    sourcePath: string,
+    destinationPath: string,
+    destinationStat: Stats,
+    expectedAssetId?: string,
+  ): Promise<void> {
+    const sourceAsset = await this.assetRepository.getByLibraryIdAndOriginalPath(library.id, sourcePath);
+    const destinationAsset = await this.assetRepository.getByLibraryIdAndOriginalPath(library.id, destinationPath);
+    if (expectedAssetId && expectedAssetId !== (sourceAsset?.id ?? destinationAsset?.id)) {
+      throw new ConflictException('Source asset ID changed; no assets were modified');
+    }
+
+    if (sourceAsset && destinationAsset) {
+      if (sourceAsset.id !== destinationAsset.id) {
+        throw new ConflictException('Destination already has an asset; no assets were removed');
+      }
+      await this.assetRepository.update({ id: destinationAsset.id, isOffline: false, deletedAt: null });
+      await this.queuePostSyncJobs([destinationAsset.id]);
+      return;
+    }
+
+    if (destinationAsset) {
+      await this.assetRepository.update({ id: destinationAsset.id, isOffline: false, deletedAt: null });
+      await this.queuePostSyncJobs([destinationAsset.id]);
+      return;
+    }
+
+    if (!sourceAsset) {
+      throw new BadRequestException('No external library asset found for the source or destination path');
+    }
+
+    await this.assetRepository.update({
+      id: sourceAsset.id,
+      originalPath: destinationPath,
+      originalFileName: basename(destinationPath),
+      checksum: this.cryptoRepository.hashSha1(`path:${destinationPath}`),
+      checksumAlgorithm: ChecksumAlgorithm.sha1Path,
+      fileModifiedAt: destinationStat.mtime,
+      isOffline: false,
+      deletedAt: null,
+    });
+    await this.queuePostSyncJobs([sourceAsset.id]);
   }
 
   @OnJob({ name: JobName.LibraryDeleteCheck, queue: QueueName.Library })
@@ -437,11 +623,38 @@ export class LibraryService extends BaseService {
     );
   }
 
-  async queueScan(id: string) {
-    await this.findOrFail(id);
+  async queueScan(id: string, dto: { path?: string } = {}) {
+    const library = await this.findOrFail(id);
+
+    if (dto.path) {
+      const scanPath = path.normalize(dto.path);
+      if (!path.isAbsolute(scanPath)) {
+        throw new BadRequestException('Scan path must be absolute');
+      }
+
+      const isInImportPath = this.isWithinImportPath(scanPath, library.importPaths);
+      if (!isInImportPath) {
+        throw new BadRequestException('Scan path must be inside one of the library import paths');
+      }
+
+      if (library.exclusionPatterns.some((pattern) => picomatch.isMatch(scanPath, pattern))) {
+        throw new BadRequestException('Scan path is excluded by the library settings');
+      }
+
+      const validation = await this.validateImportPath(scanPath);
+      if (!validation.isValid) {
+        throw new BadRequestException(`Invalid scan path: ${validation.message}`);
+      }
+
+      this.logger.log(`Starting to scan folder ${scanPath} in library ${id}`);
+      await this.jobRepository.queue({
+        name: JobName.LibrarySyncFilesQueueAll,
+        data: { id, path: scanPath },
+      });
+      return;
+    }
 
     this.logger.log(`Starting to scan library ${id}`);
-
     await this.jobRepository.queue({
       name: JobName.LibrarySyncFilesQueueAll,
       data: {
@@ -452,6 +665,19 @@ export class LibraryService extends BaseService {
     await this.jobRepository.queue({ name: JobName.LibrarySyncAssetsQueueAll, data: { id } });
   }
 
+  private isWithinImportPath(scanPath: string, importPaths: string[]): boolean {
+    return importPaths.some((importPath) => {
+      const relativePath = path.relative(path.normalize(importPath), scanPath);
+      return (
+        relativePath === '' ||
+        (!relativePath.startsWith(`..${path.sep}`) && relativePath !== '..' && !path.isAbsolute(relativePath))
+      );
+    });
+  }
+
+  async queueScanAll() {
+    await this.jobRepository.queue({ name: JobName.LibraryScanQueueAll, data: {} });
+  }
   @OnJob({ name: JobName.LibraryScanQueueAll, queue: QueueName.Library })
   async handleQueueScanAll(): Promise<JobStatus> {
     this.logger.log(`Initiating scan of all external libraries...`);
@@ -619,12 +845,30 @@ export class LibraryService extends BaseService {
 
     const validImportPaths: string[] = [];
 
-    for (const importPath of library.importPaths) {
-      const validation = await this.validateImportPath(importPath);
+    if (job.path) {
+      const scanPath = path.normalize(job.path);
+      if (
+        !this.isWithinImportPath(scanPath, library.importPaths) ||
+        library.exclusionPatterns.some((pattern) => picomatch.isMatch(scanPath, pattern))
+      ) {
+        this.logger.warn(`Skipping invalid or excluded folder scan path: ${scanPath}`);
+        return JobStatus.Skipped;
+      }
+
+      const validation = await this.validateImportPath(scanPath);
       if (validation.isValid) {
-        validImportPaths.push(path.normalize(importPath));
+        validImportPaths.push(scanPath);
       } else {
-        this.logger.warn(`Skipping invalid import path: ${importPath}. Reason: ${validation.message}`);
+        this.logger.warn(`Skipping invalid folder scan path: ${scanPath}. Reason: ${validation.message}`);
+      }
+    } else {
+      for (const importPath of library.importPaths) {
+        const validation = await this.validateImportPath(importPath);
+        if (validation.isValid) {
+          validImportPaths.push(path.normalize(importPath));
+        } else {
+          this.logger.warn(`Skipping invalid import path: ${importPath}. Reason: ${validation.message}`);
+        }
       }
     }
 

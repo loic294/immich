@@ -6,6 +6,59 @@ import { page, userEvent } from 'vitest/browser';
 import Page from './+page.svelte';
 import { load } from './+page.ts';
 
+describe('experimental external library moves', () => {
+  test('requires ownership opt-in and persists independent retention choices', async ({
+    router,
+    render,
+    app,
+    api,
+    settle,
+  }) => {
+    await router.goto(Route.systemSettings());
+    await render(Page, load);
+    await app.admin.settings.open('admin.library_settings');
+    await app.admin.settings.open('admin.library_experimental');
+    const ownership = page.getByRole('switch', { name: 'admin.library_move_ownership', exact: true });
+    const albums = page.getByRole('switch', { name: 'admin.library_move_album_editor', exact: true });
+    const links = page.getByRole('switch', { name: 'admin.library_move_shared_links', exact: true });
+    const faces = page.getByRole('switch', { name: 'admin.library_move_faces', exact: true });
+    await expect.element(ownership).not.toBeChecked();
+    for (const option of [albums, links, faces]) {
+      await expect.element(option).toBeDisabled();
+    }
+    await ownership.click();
+    await albums.click();
+    await faces.click();
+    await app.admin.settings.saveButton.click();
+    await settle();
+    expect(api.updateAdminConfig).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        library: expect.objectContaining({
+          experimental: {
+            allowOwnershipTransfer: true,
+            addAlbumEditor: true,
+            keepSharedLinks: false,
+            transferFaces: true,
+          },
+        }),
+      }),
+    });
+  });
+
+  test('respects read-only configuration files', async ({ data, router, render, app }) => {
+    data.serverFeatures.configFile = true;
+    await featureFlagsManager.init();
+    await router.goto(Route.systemSettings());
+    await render(Page, load);
+    await app.admin.settings.open('admin.library_settings');
+    await app.admin.settings.open('admin.library_experimental');
+    await expect
+      .element(page.getByRole('switch', { name: 'admin.library_move_ownership', exact: true }))
+      .toBeDisabled();
+    await expect.element(app.admin.settings.saveButton).toBeDisabled();
+  });
+});
+
 describe('user settings', () => {
   test.beforeEach(async ({ router, render, app }) => {
     await router.goto(Route.systemSettings());

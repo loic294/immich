@@ -4,10 +4,13 @@ import { ConfigAdminController } from 'src/controllers/config-admin.controller.j
 import { ConfigPublicController } from 'src/controllers/config-public.controller.js';
 import { ConfigUserController } from 'src/controllers/config-user.controller.js';
 import { defaults, mapPublicConfig, mapUserConfig } from 'src/dtos/config.dto.js';
+import { Permission } from 'src/enum.js';
+import { AuthService } from 'src/services/auth.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
 import { SystemConfigService } from 'src/services/system-config.service.js';
+import { ApiKeyFactory } from 'test/factories/api-key.factory.js';
 import { errorDto } from 'test/medium/responses.js';
-import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils.js';
+import { ControllerContext, controllerSetup, mockBaseService, newTestService } from 'test/utils.js';
 
 /** Returns a full config that passes Zod validation (required URLs and min lengths). */
 function validConfig() {
@@ -58,6 +61,37 @@ describe('config controllers', () => {
   });
 
   describe('PUT /admin/config', () => {
+    it('defaults experimental policies for clients that omit the new settings', async () => {
+      service.updateAdminConfig.mockImplementation((dto) => Promise.resolve(dto));
+      const { experimental: _, ...library } = validConfig().library;
+      const response = await request(ctx.getHttpServer())
+        .put('/admin/config')
+        .send({ ...validConfig(), library });
+      expect(response.status).toBe(200);
+      expect(service.updateAdminConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ library: expect.objectContaining({ experimental: defaults.library.experimental }) }),
+      );
+    });
+
+    it.each([
+      { isAdmin: false, permissions: [Permission.All], status: 403 },
+      { isAdmin: true, permissions: [Permission.LibraryUpdate], status: 403 },
+      { isAdmin: true, permissions: [Permission.AdminConfigUpdate], status: 200 },
+    ])('protects experimental policies: $isAdmin / $permissions', async ({ isAdmin, permissions, status }) => {
+      const { sut: auth, mocks } = newTestService(AuthService);
+      mocks.apiKey.getKey.mockResolvedValue(ApiKeyFactory.from({ permissions }).user({ isAdmin }).build());
+      ctx.authenticate.mockImplementation((request) => auth.authenticate(request));
+      service.updateAdminConfig.mockImplementation((dto) => Promise.resolve(dto));
+      const config = validConfig();
+      config.library.experimental.allowOwnershipTransfer = true;
+      const response = await request(ctx.getHttpServer())
+        .put('/admin/config')
+        .set('x-api-key', 'test-key')
+        .send(config);
+      expect(response.status).toBe(status);
+      expect(service.updateAdminConfig).toHaveBeenCalledTimes(status === 200 ? 1 : 0);
+    });
+
     it('should accept a valid config', async () => {
       service.updateAdminConfig.mockImplementation((dto) => Promise.resolve(dto));
 

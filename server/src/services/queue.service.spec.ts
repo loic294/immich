@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { SystemConfig, defaults } from 'src/dtos/config.dto.js';
-import { ImmichWorker, JobName, QueueCommand, QueueName } from 'src/enum.js';
+import { ImmichWorker, JobName, QueueCommand, QueueName, QueueStatus } from 'src/enum.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { factory } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -49,6 +49,47 @@ describe(QueueService.name, () => {
         { name: JobName.AssetGenerateThumbnailsQueueAll, data: { force: false } },
         { name: JobName.FacialRecognitionQueueAll, data: { force: false, nightly: true } },
       ]);
+    });
+  });
+
+  describe('queue status', () => {
+    it('should report a running queue', async () => {
+      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics({ active: 1 }));
+      mocks.job.isPaused.mockResolvedValue(false);
+
+      await expect(sut.get(factory.auth(), QueueName.Library)).resolves.toEqual(
+        expect.objectContaining({
+          isPaused: false,
+          isRunning: true,
+          status: QueueStatus.Running,
+        }),
+      );
+    });
+
+    it('should report an idle queue waiting for tasks', async () => {
+      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics({ active: 0, waiting: 3 }));
+      mocks.job.isPaused.mockResolvedValue(false);
+
+      await expect(sut.get(factory.auth(), QueueName.Library)).resolves.toEqual(
+        expect.objectContaining({
+          isPaused: false,
+          isRunning: false,
+          status: QueueStatus.Idle,
+        }),
+      );
+    });
+
+    it('should report a paused running queue distinctly', async () => {
+      mocks.job.getJobCounts.mockResolvedValue(factory.queueStatistics({ active: 1 }));
+      mocks.job.isPaused.mockResolvedValue(true);
+
+      await expect(sut.get(factory.auth(), QueueName.Library)).resolves.toEqual(
+        expect.objectContaining({
+          isPaused: true,
+          isRunning: true,
+          status: QueueStatus.Paused,
+        }),
+      );
     });
   });
 
