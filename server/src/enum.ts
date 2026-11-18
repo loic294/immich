@@ -369,6 +369,17 @@ export enum SharedLinkType {
 
 export const SharedLinkTypeSchema = z.enum(SharedLinkType).describe('Shared link type').meta({ id: 'SharedLinkType' });
 
+export enum LibrarySharedLinkPolicy {
+  Transfer = 'transfer',
+  Delete = 'delete',
+  Detach = 'detach',
+}
+
+export const LibrarySharedLinkPolicySchema = z
+  .enum(LibrarySharedLinkPolicy)
+  .describe('Shared link policy for cross-owner file moves')
+  .meta({ id: 'LibrarySharedLinkPolicy' });
+
 export enum StorageFolder {
   EncodedVideo = 'encoded-video',
   Library = 'library',

@@ -140,7 +140,7 @@ export class LibraryController {
   @Endpoint({
     summary: 'Synchronize a moved external library file',
     description:
-      'Synchronize an external library asset after it has been moved on the filesystem, optionally to another library. Cross-owner moves follow the experimental admin settings. Requires an administrator and library.update permission for API keys.',
+      'Synchronize an external library asset after it has been moved on the filesystem, optionally to another library. File management must be enabled in the admin settings. Requires an administrator and library.update permission for API keys.',
     history: new HistoryBuilder().added('v4.0.0').alpha('v4.0.0'),
   })
   syncFileMove(@Param() { id }: UUIDParamDto, @Body() dto: LibraryFileMoveDto): Promise<void> {

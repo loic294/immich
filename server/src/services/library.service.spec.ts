@@ -1183,12 +1183,18 @@ describe(LibraryService.name, () => {
     const sourcePath = '/mnt/source/photo.jpg';
     const destinationPath = '/mnt/destination/photo.jpg';
 
+    beforeEach(() => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        library: { fileManagement: { enabled: true } },
+      });
+    });
+
     const setupCrossLibraryMove = (allowOwnershipTransfer: boolean) => {
       const source = factory.library({ importPaths: ['/mnt/source'] });
       const destination = factory.library({ importPaths: ['/mnt/destination'] });
       mocks.library.get.mockImplementation((id) => Promise.resolve(id === source.id ? source : destination));
       mocks.systemMetadata.get.mockResolvedValue({
-        library: { experimental: { ...defaults.library.experimental, allowOwnershipTransfer } },
+        library: { fileManagement: { ...defaults.library.fileManagement, enabled: true, allowOwnershipTransfer } },
       });
       mocks.storage.stat.mockImplementation((filePath): Promise<Stats> =>
         filePath === sourcePath
@@ -1197,6 +1203,24 @@ describe(LibraryService.name, () => {
       );
       return { source, destination };
     };
+
+    it.each(['add', 'remove', 'move'] as const)(
+      'should reject %s requests when file management is disabled',
+      async (action) => {
+        mocks.systemMetadata.get.mockResolvedValue({
+          library: { fileManagement: { enabled: false } },
+        });
+        const library = factory.library({ importPaths: ['/mnt/source'] });
+        const operations = {
+          add: () => sut.syncFileAdd(library.id, { path: sourcePath }),
+          remove: () => sut.syncFileRemove(library.id, { path: sourcePath }),
+          move: () => sut.syncFileMove(library.id, { sourcePath, destinationPath }),
+        };
+
+        await expect(operations[action]()).rejects.toThrow('API file management is disabled');
+        expect(mocks.library.get).not.toHaveBeenCalled();
+      },
+    );
 
     it('should require opt-in before transferring between owners', async () => {
       const { source, destination } = setupCrossLibraryMove(false);

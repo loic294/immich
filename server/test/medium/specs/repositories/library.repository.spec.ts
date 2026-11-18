@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { defaults } from 'src/dtos/config.dto.js';
-import { AlbumUserRole, AssetFileType, SharedLinkType } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, LibrarySharedLinkPolicy, SharedLinkType } from 'src/enum.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -66,7 +66,7 @@ const setup = async () => {
     assetId: asset.id,
     checksum: Buffer.from(`destination-${asset.id}`),
     fileModifiedAt: new Date(),
-    experimental: { ...defaults.library.experimental, allowOwnershipTransfer: true },
+    fileManagement: { ...defaults.library.fileManagement, enabled: true, allowOwnershipTransfer: true },
   };
   return {
     ctx,
@@ -92,7 +92,7 @@ describe('cross-library move transactions', () => {
       await sut.moveAsset({
         ...options,
         destinationLibrary,
-        experimental: defaults.library.experimental,
+        fileManagement: defaults.library.fileManagement,
       }),
     ).toEqual({ assetId: asset.id, faceIds: [], detectFaces: false });
     expect(await db.selectFrom('album_asset').selectAll().where('assetId', '=', asset.id).execute()).toHaveLength(1);
@@ -110,7 +110,7 @@ describe('cross-library move transactions', () => {
   });
 
   it('preserves asset identity and metadata while clearing private owner associations by default', async () => {
-    const { sut, options, asset, album, assetFace, sourceOwner, destinationOwner } = await setup();
+    const { sut, options, asset, album, assetFace, sourceOwner, destinationOwner, link } = await setup();
     expect(await sut.moveAsset(options)).toEqual({ assetId: asset.id, faceIds: [], detectFaces: true });
     const moved = await db.selectFrom('asset').selectAll().where('id', '=', asset.id).executeTakeFirstOrThrow();
     expect(moved).toMatchObject({
@@ -124,6 +124,9 @@ describe('cross-library move transactions', () => {
     });
     expect(await db.selectFrom('album_asset').selectAll().where('assetId', '=', asset.id).execute()).toEqual([]);
     expect(await db.selectFrom('shared_link_asset').selectAll().where('assetId', '=', asset.id).execute()).toEqual([]);
+    expect(await db.selectFrom('shared_link').select('userId').where('id', '=', link.id).executeTakeFirst()).toEqual({
+      userId: sourceOwner.id,
+    });
     expect(await db.selectFrom('asset_face').selectAll().where('id', '=', assetFace.id).execute()).toEqual([]);
     expect(await db.selectFrom('face_search').selectAll().where('faceId', '=', assetFace.id).execute()).toEqual([]);
     expect(await db.selectFrom('asset_file').selectAll().where('assetId', '=', asset.id).execute()).toEqual([]);
@@ -140,12 +143,13 @@ describe('cross-library move transactions', () => {
     ).toEqual({ ownerId: sourceOwner.id });
   });
 
-  it('optionally adds an album editor and reuses detections without sharing person identities', async () => {
+  it('optionally retains album access, transfers an individual shared link, and reuses detections', async () => {
     const { ctx, sut, options, asset, album, assetFace, person, sourceOwner, destinationOwner, link } = await setup();
-    options.experimental = {
+    options.fileManagement = {
+      enabled: true,
       allowOwnershipTransfer: true,
       addAlbumEditor: true,
-      keepSharedLinks: true,
+      sharedLinkPolicy: LibrarySharedLinkPolicy.Transfer,
       transferFaces: true,
     };
     await ctx.newAlbumUser({ albumId: album.id, userId: destinationOwner.id, role: AlbumUserRole.Viewer });
@@ -171,7 +175,7 @@ describe('cross-library move transactions', () => {
       1,
     );
     expect(await db.selectFrom('shared_link').select('userId').where('id', '=', link.id).executeTakeFirst()).toEqual({
-      userId: sourceOwner.id,
+      userId: destinationOwner.id,
     });
     expect(
       await db
@@ -193,10 +197,59 @@ describe('cross-library move transactions', () => {
     ).toEqual([]);
   });
 
+  it('detaches a moved asset while a shared link still has assets owned by another user', async () => {
+    const { ctx, sut, options, asset, sourceOwner, destinationOwner, link } = await setup();
+    const { asset: other } = await ctx.newAsset({ ownerId: sourceOwner.id });
+    await db.insertInto('shared_link_asset').values({ sharedLinkId: link.id, assetId: other.id }).execute();
+    options.fileManagement.sharedLinkPolicy = LibrarySharedLinkPolicy.Transfer;
+
+    await sut.moveAsset(options);
+
+    expect(
+      await db.selectFrom('shared_link_asset').select('assetId').where('sharedLinkId', '=', link.id).execute(),
+    ).toEqual([{ assetId: other.id }]);
+    expect(await db.selectFrom('shared_link').select('userId').where('id', '=', link.id).executeTakeFirst()).toEqual({
+      userId: sourceOwner.id,
+    });
+    expect(await db.selectFrom('asset').select('ownerId').where('id', '=', asset.id).executeTakeFirst()).toEqual({
+      ownerId: destinationOwner.id,
+    });
+  });
+
+  it('transfers a shared link when its other assets already belong to the destination owner', async () => {
+    const { ctx, sut, options, asset, destinationOwner, link } = await setup();
+    const { asset: transferred } = await ctx.newAsset({
+      ownerId: destinationOwner.id,
+      libraryId: options.destinationLibrary.id,
+    });
+    await db.insertInto('shared_link_asset').values({ sharedLinkId: link.id, assetId: transferred.id }).execute();
+    options.fileManagement.sharedLinkPolicy = LibrarySharedLinkPolicy.Transfer;
+
+    await sut.moveAsset(options);
+
+    expect(
+      await db.selectFrom('shared_link_asset').select('assetId').where('sharedLinkId', '=', link.id).execute(),
+    ).toEqual(expect.arrayContaining([{ assetId: transferred.id }, { assetId: asset.id }]));
+    expect(await db.selectFrom('shared_link').select('userId').where('id', '=', link.id).executeTakeFirst()).toEqual({
+      userId: destinationOwner.id,
+    });
+  });
+
+  it('deletes affected individual shared links', async () => {
+    const { sut, options, link } = await setup();
+    options.fileManagement.sharedLinkPolicy = LibrarySharedLinkPolicy.Delete;
+
+    await sut.moveAsset(options);
+
+    expect(
+      await db.selectFrom('shared_link').select('id').where('id', '=', link.id).executeTakeFirst(),
+    ).toBeUndefined();
+  });
+
   it('never downgrades an existing destination album owner to editor', async () => {
     const { ctx, sut, options, asset, destinationOwner } = await setup();
     const { album } = await ctx.newAlbum({ ownerId: destinationOwner.id }, [asset.id]);
-    options.experimental.addAlbumEditor = true;
+    options.fileManagement.addAlbumEditor = true;
     await sut.moveAsset(options);
     expect(
       await db

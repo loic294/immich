@@ -6,14 +6,18 @@ test.describe('system settings', () => {
     { width: 1440, height: 1100 },
     { width: 390, height: 844 },
   ]) {
-    test(`experimental library settings remain usable at ${viewport.width}px`, async ({ page, api }, testInfo) => {
+    test(`API file management settings remain usable at ${viewport.width}px`, async ({ page, api }, testInfo) => {
       await page.setViewportSize(viewport);
       await page.goto(Route.systemSettings());
       await page.getByRole('button', { name: 'admin.library_settings', exact: false }).click();
-      await page.getByRole('button', { name: 'admin.library_experimental', exact: false }).click();
+      await page.getByRole('button', { name: 'admin.library_file_management', exact: false }).click();
+      await page.getByRole('switch', { name: 'admin.library_file_management_enable', exact: true }).click();
       const ownership = page.getByRole('switch', { name: 'admin.library_move_ownership', exact: true });
       await expect(ownership).toBeVisible();
       await ownership.click();
+      await page
+        .getByRole('combobox', { name: 'admin.library_move_shared_links', exact: true })
+        .selectOption('transfer');
       const faces = page.getByRole('switch', { name: 'admin.library_move_faces', exact: true });
       await faces.click();
       await expect(faces).toBeChecked();
@@ -21,16 +25,17 @@ test.describe('system settings', () => {
         await Promise.all(document.getAnimations().map((animation) => animation.finished));
       });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      await page.screenshot({ path: testInfo.outputPath('experimental-library-settings.png'), fullPage: true });
+      await page.screenshot({ path: testInfo.outputPath('api-file-management-settings.png'), fullPage: true });
       await page.getByRole('button', { name: 'save', exact: true }).click();
       await expect.poll(() => api.updateAdminConfig.calls.length).toBe(1);
       expect(api.updateAdminConfig).toHaveBeenCalledWith({
         body: expect.objectContaining({
           library: expect.objectContaining({
-            experimental: {
+            fileManagement: {
+              enabled: true,
               allowOwnershipTransfer: true,
               addAlbumEditor: false,
-              keepSharedLinks: false,
+              sharedLinkPolicy: 'transfer',
               transferFaces: true,
             },
           }),

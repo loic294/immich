@@ -7,6 +7,7 @@ import {
   HlsVideoResolution,
   ImageEffort,
   ImageFormat,
+  LibrarySharedLinkPolicy,
   LogLevel,
   OAuthTokenEndpointAuthMethod,
   QueueName,
@@ -228,10 +229,11 @@ const updatedConfig = Object.freeze<SystemConfig>({
     customCss: '',
   },
   library: {
-    experimental: {
+    fileManagement: {
+      enabled: false,
       allowOwnershipTransfer: false,
       addAlbumEditor: false,
-      keepSharedLinks: false,
+      sharedLinkPolicy: LibrarySharedLinkPolicy.Detach,
       transferFaces: false,
     },
     scan: {

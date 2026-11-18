@@ -184,13 +184,14 @@ export type AdminConfigJobDto = {
     videoConversion: AdminConfigJobSettingsDto;
     workflow: AdminConfigJobSettingsDto;
 };
-export type AdminConfigLibraryExperimentalDto = {
+export type AdminConfigLibraryFileManagementDto = {
     /** Keep album membership and add the destination owner as an editor */
     addAlbumEditor: boolean;
     /** Allow moves between library owners */
     allowOwnershipTransfer: boolean;
-    /** Keep individual shared links when ownership changes */
-    keepSharedLinks: boolean;
+    /** Enable the external library file management API */
+    enabled: boolean;
+    sharedLinkPolicy: LibrarySharedLinkPolicy;
     /** Reuse face detections and recognize people for the destination owner */
     transferFaces: boolean;
 };
@@ -205,7 +206,7 @@ export type AdminConfigLibraryWatchDto = {
     enabled: boolean;
 };
 export type AdminConfigLibraryDto = {
-    experimental?: AdminConfigLibraryExperimentalDto;
+    fileManagement?: AdminConfigLibraryFileManagementDto;
     scan: AdminConfigLibraryScanDto;
     watch: AdminConfigLibraryWatchDto;
 };
@@ -8378,6 +8379,11 @@ export enum ImageFormat {
     Jpeg = "jpeg",
     Jxl = "jxl",
     Webp = "webp"
+}
+export enum LibrarySharedLinkPolicy {
+    Transfer = "transfer",
+    Delete = "delete",
+    Detach = "detach"
 }
 export enum LogLevel {
     Verbose = "verbose",

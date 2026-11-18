@@ -5,7 +5,14 @@ import { basename } from 'node:path';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import { LibraryStatsResponseDto } from 'src/dtos/library.dto.js';
-import { AlbumUserRole, AssetFileType, AssetType, AssetVisibility, ChecksumAlgorithm } from 'src/enum.js';
+import {
+  AlbumUserRole,
+  AssetFileType,
+  AssetType,
+  AssetVisibility,
+  ChecksumAlgorithm,
+  LibrarySharedLinkPolicy,
+} from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 
@@ -25,7 +32,7 @@ type MoveAssetOptions = {
   assetId?: string;
   checksum: Buffer;
   fileModifiedAt: Date;
-  experimental: SystemConfig['library']['experimental'];
+  fileManagement: SystemConfig['library']['fileManagement'];
 };
 type MoveAssetResult = { assetId: string; faceIds: string[]; detectFaces: boolean } | { error: string };
 
@@ -85,7 +92,7 @@ export class LibraryRepository {
   }
 
   moveAsset(options: MoveAssetOptions): Promise<MoveAssetResult> {
-    const { sourceLibrary, destinationLibrary, sourcePath, destinationPath, experimental } = options;
+    const { sourceLibrary, destinationLibrary, sourcePath, destinationPath, fileManagement } = options;
     return this.db.transaction().execute(async (tx): Promise<MoveAssetResult> => {
       const libraries = await tx
         .selectFrom('library')
@@ -155,7 +162,7 @@ export class LibraryRepository {
       let faceIds: string[] = [];
       let detectFaces = false;
       if (ownershipChanged) {
-        if (!experimental.allowOwnershipTransfer) {
+        if (!fileManagement.allowOwnershipTransfer) {
           return { error: 'Cross-owner moves are disabled' };
         }
         const livePhoto = await tx
@@ -166,7 +173,7 @@ export class LibraryRepository {
         if (source.stackId || source.livePhotoVideoId || livePhoto) {
           return { error: 'Unstack the asset and unlink live-photo components before transferring ownership' };
         }
-        if (experimental.addAlbumEditor) {
+        if (fileManagement.addAlbumEditor) {
           const albums = await tx
             .selectFrom('album_asset')
             .select('albumId')
@@ -198,8 +205,54 @@ export class LibraryRepository {
             .execute();
           await tx.deleteFrom('album_asset').where('assetId', '=', source.id).execute();
         }
-        if (!experimental.keepSharedLinks) {
+        if (fileManagement.sharedLinkPolicy === LibrarySharedLinkPolicy.Delete) {
+          await tx
+            .deleteFrom('shared_link')
+            .where(
+              'id',
+              'in',
+              tx.selectFrom('shared_link_asset').select('sharedLinkId').where('assetId', '=', source.id),
+            )
+            .execute();
+        } else if (fileManagement.sharedLinkPolicy === LibrarySharedLinkPolicy.Detach) {
           await tx.deleteFrom('shared_link_asset').where('assetId', '=', source.id).execute();
+        } else {
+          const links = await tx
+            .selectFrom('shared_link')
+            .select('id')
+            .where(
+              'id',
+              'in',
+              tx.selectFrom('shared_link_asset').select('sharedLinkId').where('assetId', '=', source.id),
+            )
+            .orderBy('id')
+            .forUpdate()
+            .execute();
+          const linkIds = links.map(({ id }) => id);
+          for (const linkId of linkIds) {
+            const linkedAssets = await tx
+              .selectFrom('shared_link_asset')
+              .innerJoin('asset', 'asset.id', 'shared_link_asset.assetId')
+              .select(['asset.id', 'asset.ownerId'])
+              .where('shared_link_asset.sharedLinkId', '=', linkId)
+              .execute();
+            const hasOtherOwner = linkedAssets.some(
+              ({ id, ownerId }) => id !== source.id && ownerId !== destinationLibrary.ownerId,
+            );
+            if (hasOtherOwner) {
+              await tx
+                .deleteFrom('shared_link_asset')
+                .where('sharedLinkId', '=', linkId)
+                .where('assetId', '=', source.id)
+                .execute();
+            } else {
+              await tx
+                .updateTable('shared_link')
+                .set({ userId: destinationLibrary.ownerId })
+                .where('id', '=', linkId)
+                .execute();
+            }
+          }
         }
         await tx.deleteFrom('tag_asset').where('assetId', '=', source.id).execute();
         await tx.deleteFrom('memory_asset').where('assetId', '=', source.id).execute();
@@ -209,7 +262,7 @@ export class LibraryRepository {
           .where('ownerId', '=', source.ownerId)
           .where('faceAssetId', 'in', tx.selectFrom('asset_face').select('id').where('assetId', '=', source.id))
           .execute();
-        if (experimental.transferFaces) {
+        if (fileManagement.transferFaces) {
           await tx
             .deleteFrom('asset_face')
             .where('assetId', '=', source.id)

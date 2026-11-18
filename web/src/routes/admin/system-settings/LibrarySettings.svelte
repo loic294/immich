@@ -8,6 +8,7 @@
   import { featureFlagsManager } from '#lib/managers/feature-flags-manager.svelte.ts';
   import { createPreloadedQuery } from '#lib/queries/client.ts';
   import { getAdminConfigQuery } from '#lib/queries/config-admin.query.ts';
+  import { LibrarySharedLinkPolicy } from '@immich/sdk';
   import { Link } from '@immich/ui';
   import { cloneDeep } from 'lodash-es';
   import { t } from 'svelte-i18n';
@@ -25,6 +26,20 @@
     { text: $t('interval.night_at_twoam'), value: '0 2 * * *' },
     { text: $t('interval.day_at_onepm'), value: '0 13 * * *' },
     { text: $t('interval.hours', { values: { hours: 6 } }), value: '0 */6 * * *' },
+  ]);
+  let sharedLinkPolicyOptions = $derived([
+    {
+      text: $t('admin.library_move_shared_links_transfer'),
+      value: LibrarySharedLinkPolicy.Transfer,
+    },
+    {
+      text: $t('admin.library_move_shared_links_delete'),
+      value: LibrarySharedLinkPolicy.Delete,
+    },
+    {
+      text: $t('admin.library_move_shared_links_detach'),
+      value: LibrarySharedLinkPolicy.Detach,
+    },
   ]);
 </script>
 
@@ -91,36 +106,50 @@
           </div>
         </SettingAccordion>
 
-        {#if configToEdit.library.experimental}
+        {#if configToEdit.library.fileManagement}
           <SettingAccordion
-            key="library-experimental-moves"
-            title={$t('admin.library_experimental')}
-            subtitle={$t('admin.library_experimental_description')}
+            key="library-file-management"
+            title={$t('admin.library_file_management')}
+            subtitle={$t('admin.library_file_management_description')}
           >
             <div class="ms-4 mt-4 flex flex-col gap-4">
               <SettingSwitch
+                title={$t('admin.library_file_management_enable')}
+                subtitle={$t('admin.library_file_management_enable_description')}
+                {disabled}
+                bind:checked={configToEdit.library.fileManagement.enabled}
+              />
+              <SettingSwitch
                 title={$t('admin.library_move_ownership')}
                 subtitle={$t('admin.library_move_ownership_description')}
-                {disabled}
-                bind:checked={configToEdit.library.experimental.allowOwnershipTransfer}
+                disabled={disabled || !configToEdit.library.fileManagement.enabled}
+                bind:checked={configToEdit.library.fileManagement.allowOwnershipTransfer}
               />
               <SettingSwitch
                 title={$t('admin.library_move_album_editor')}
                 subtitle={$t('admin.library_move_album_editor_description')}
-                disabled={disabled || !configToEdit.library.experimental.allowOwnershipTransfer}
-                bind:checked={configToEdit.library.experimental.addAlbumEditor}
+                disabled={disabled ||
+                  !configToEdit.library.fileManagement.enabled ||
+                  !configToEdit.library.fileManagement.allowOwnershipTransfer}
+                bind:checked={configToEdit.library.fileManagement.addAlbumEditor}
               />
-              <SettingSwitch
-                title={$t('admin.library_move_shared_links')}
-                subtitle={$t('admin.library_move_shared_links_description')}
-                disabled={disabled || !configToEdit.library.experimental.allowOwnershipTransfer}
-                bind:checked={configToEdit.library.experimental.keepSharedLinks}
+              <SettingSelect
+                options={sharedLinkPolicyOptions}
+                disabled={disabled ||
+                  !configToEdit.library.fileManagement.enabled ||
+                  !configToEdit.library.fileManagement.allowOwnershipTransfer}
+                name="library-shared-link-policy"
+                label={$t('admin.library_move_shared_links')}
+                desc={$t('admin.library_move_shared_links_description')}
+                bind:value={configToEdit.library.fileManagement.sharedLinkPolicy}
               />
               <SettingSwitch
                 title={$t('admin.library_move_faces')}
                 subtitle={$t('admin.library_move_faces_description')}
-                disabled={disabled || !configToEdit.library.experimental.allowOwnershipTransfer}
-                bind:checked={configToEdit.library.experimental.transferFaces}
+                disabled={disabled ||
+                  !configToEdit.library.fileManagement.enabled ||
+                  !configToEdit.library.fileManagement.allowOwnershipTransfer}
+                bind:checked={configToEdit.library.fileManagement.transferFaces}
               />
             </div>
           </SettingAccordion>

@@ -6,6 +6,7 @@ import {
   Colorspace,
   ImageEffort,
   ImageFormat,
+  LibrarySharedLinkPolicy,
   LogLevel,
   OAuthTokenEndpointAuthMethod,
   ReleaseChannel,
@@ -287,10 +288,11 @@ const adminConfig = (overrides: Partial<ResponseOf<'getAdminConfig'>> = {}): Res
   library: {
     scan: { enabled: true, cronExpression: '0 0 * * *' },
     watch: { enabled: false },
-    experimental: {
+    fileManagement: {
+      enabled: false,
       allowOwnershipTransfer: false,
       addAlbumEditor: false,
-      keepSharedLinks: false,
+      sharedLinkPolicy: LibrarySharedLinkPolicy.Detach,
       transferFaces: false,
     },
   },

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import { R_OK } from 'node:constants';
 import { Stats } from 'node:fs';
@@ -237,6 +237,7 @@ export class LibraryService extends BaseService {
   }
 
   async syncFileAdd(id: string, dto: LibraryFilePathDto): Promise<void> {
+    await this.getFileManagement();
     const library = await this.findOrFail(id);
     const filePath = this.normalizeLibraryFilePath(library, dto.path);
 
@@ -271,6 +272,7 @@ export class LibraryService extends BaseService {
   }
 
   async syncFileRemove(id: string, dto: LibraryFilePathDto): Promise<void> {
+    await this.getFileManagement();
     const library = await this.findOrFail(id);
     const filePath = this.normalizeLibraryFilePath(library, dto.path);
 
@@ -294,6 +296,7 @@ export class LibraryService extends BaseService {
   }
 
   async syncFileMove(id: string, dto: LibraryFileMoveDto): Promise<void> {
+    const fileManagement = await this.getFileManagement();
     const library = await this.findOrFail(id);
     const destinationLibrary =
       dto.destinationLibraryId && dto.destinationLibraryId !== id
@@ -301,10 +304,12 @@ export class LibraryService extends BaseService {
         : library;
     const sourcePath = this.normalizeLibraryFilePath(library, dto.sourcePath);
     const destinationPath = this.normalizeLibraryFilePath(destinationLibrary, dto.destinationPath);
-    const config = destinationLibrary.id === library.id ? undefined : await this.getConfig({ withCache: false });
-    const experimental = config?.library.experimental;
-    if (experimental && library.ownerId !== destinationLibrary.ownerId && !experimental.allowOwnershipTransfer) {
-      throw new BadRequestException('Cross-owner moves are disabled in the experimental external library settings');
+    if (
+      destinationLibrary.id !== library.id &&
+      library.ownerId !== destinationLibrary.ownerId &&
+      !fileManagement.allowOwnershipTransfer
+    ) {
+      throw new BadRequestException('Cross-owner moves are disabled in the API file management settings');
     }
 
     let destinationStat: Stats;
@@ -329,7 +334,7 @@ export class LibraryService extends BaseService {
       if (error.code !== 'ENOENT') {
         throw error;
       }
-      if (experimental) {
+      if (destinationLibrary.id !== library.id) {
         const result = await this.libraryRepository.moveAsset({
           sourceLibrary: library,
           destinationLibrary,
@@ -338,7 +343,7 @@ export class LibraryService extends BaseService {
           assetId: dto.assetId,
           checksum: this.cryptoRepository.hashSha1(`path:${destinationPath}`),
           fileModifiedAt: destinationStat.mtime,
-          experimental,
+          fileManagement,
         });
         if ('error' in result) {
           throw new ConflictException(result.error);
@@ -356,6 +361,14 @@ export class LibraryService extends BaseService {
     }
 
     throw new BadRequestException('Moved source file still exists');
+  }
+
+  private async getFileManagement() {
+    const config = await this.getConfig({ withCache: false });
+    if (!config.library.fileManagement.enabled) {
+      throw new ForbiddenException('External library API file management is disabled');
+    }
+    return config.library.fileManagement;
   }
 
   private async syncMovedDestination(

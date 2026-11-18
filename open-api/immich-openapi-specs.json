@@ -7946,7 +7946,7 @@
     },
     "/libraries/{id}/files/move": {
       "post": {
-        "description": "Synchronize an external library asset after it has been moved on the filesystem, optionally to another library. Cross-owner moves follow the experimental admin settings. Requires an administrator and library.update permission for API keys.",
+        "description": "Synchronize an external library asset after it has been moved on the filesystem, optionally to another library. File management must be enabled in the admin settings. Requires an administrator and library.update permission for API keys.",
         "operationId": "syncFileMove",
         "parameters": [
           {
@@ -19919,8 +19919,8 @@
       },
       "AdminConfigLibraryDto": {
         "properties": {
-          "experimental": {
-            "$ref": "#/components/schemas/AdminConfigLibraryExperimentalDto"
+          "fileManagement": {
+            "$ref": "#/components/schemas/AdminConfigLibraryFileManagementDto"
           },
           "scan": {
             "$ref": "#/components/schemas/AdminConfigLibraryScanDto"
@@ -19935,7 +19935,7 @@
         ],
         "type": "object"
       },
-      "AdminConfigLibraryExperimentalDto": {
+      "AdminConfigLibraryFileManagementDto": {
         "properties": {
           "addAlbumEditor": {
             "description": "Keep album membership and add the destination owner as an editor",
@@ -19945,9 +19945,12 @@
             "description": "Allow moves between library owners",
             "type": "boolean"
           },
-          "keepSharedLinks": {
-            "description": "Keep individual shared links when ownership changes",
+          "enabled": {
+            "description": "Enable the external library file management API",
             "type": "boolean"
+          },
+          "sharedLinkPolicy": {
+            "$ref": "#/components/schemas/LibrarySharedLinkPolicy"
           },
           "transferFaces": {
             "description": "Reuse face detections and recognize people for the destination owner",
@@ -19957,7 +19960,8 @@
         "required": [
           "addAlbumEditor",
           "allowOwnershipTransfer",
-          "keepSharedLinks",
+          "enabled",
+          "sharedLinkPolicy",
           "transferFaces"
         ],
         "type": "object"
@@ -23930,6 +23934,15 @@
           }
         },
         "type": "object"
+      },
+      "LibrarySharedLinkPolicy": {
+        "description": "Shared link policy for cross-owner file moves",
+        "enum": [
+          "transfer",
+          "delete",
+          "detach"
+        ],
+        "type": "string"
       },
       "LibraryStatsResponseDto": {
         "properties": {

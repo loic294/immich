@@ -6,8 +6,8 @@ import { page, userEvent } from 'vitest/browser';
 import Page from './+page.svelte';
 import { load } from './+page.ts';
 
-describe('experimental external library moves', () => {
-  test('requires ownership opt-in and persists independent retention choices', async ({
+describe('API file management', () => {
+  test('requires enablement and ownership opt-in and persists retention choices', async ({
     router,
     render,
     app,
@@ -17,27 +17,32 @@ describe('experimental external library moves', () => {
     await router.goto(Route.systemSettings());
     await render(Page, load);
     await app.admin.settings.open('admin.library_settings');
-    await app.admin.settings.open('admin.library_experimental');
+    await app.admin.settings.open('admin.library_file_management');
+    const apiEnabled = page.getByRole('switch', { name: 'admin.library_file_management_enable', exact: true });
     const ownership = page.getByRole('switch', { name: 'admin.library_move_ownership', exact: true });
     const albums = page.getByRole('switch', { name: 'admin.library_move_album_editor', exact: true });
-    const links = page.getByRole('switch', { name: 'admin.library_move_shared_links', exact: true });
+    const links = page.getByRole('combobox', { name: 'admin.library_move_shared_links', exact: true });
     const faces = page.getByRole('switch', { name: 'admin.library_move_faces', exact: true });
+    await expect.element(apiEnabled).not.toBeChecked();
     await expect.element(ownership).not.toBeChecked();
-    for (const option of [albums, links, faces]) {
+    for (const option of [ownership, albums, links, faces]) {
       await expect.element(option).toBeDisabled();
     }
+    await apiEnabled.click();
     await ownership.click();
     await albums.click();
+    await links.selectOptions('transfer');
     await faces.click();
     await app.admin.settings.saveButton.click();
     await settle();
     expect(api.updateAdminConfig).toHaveBeenCalledWith({
       body: expect.objectContaining({
         library: expect.objectContaining({
-          experimental: {
+          fileManagement: {
+            enabled: true,
             allowOwnershipTransfer: true,
             addAlbumEditor: true,
-            keepSharedLinks: false,
+            sharedLinkPolicy: 'transfer',
             transferFaces: true,
           },
         }),
@@ -51,9 +56,9 @@ describe('experimental external library moves', () => {
     await router.goto(Route.systemSettings());
     await render(Page, load);
     await app.admin.settings.open('admin.library_settings');
-    await app.admin.settings.open('admin.library_experimental');
+    await app.admin.settings.open('admin.library_file_management');
     await expect
-      .element(page.getByRole('switch', { name: 'admin.library_move_ownership', exact: true }))
+      .element(page.getByRole('switch', { name: 'admin.library_file_management_enable', exact: true }))
       .toBeDisabled();
     await expect.element(app.admin.settings.saveButton).toBeDisabled();
   });
