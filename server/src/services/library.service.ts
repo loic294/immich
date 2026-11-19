@@ -253,11 +253,8 @@ export class LibraryService extends BaseService {
     if (!stat.isFile()) {
       throw new BadRequestException('Added path is not a file');
     }
-    if (mimeTypes.isSidecar(filePath)) {
-      return;
-    }
     if (!mimeTypes.isAsset(filePath)) {
-      throw new BadRequestException('Added file is not a supported image or video');
+      return;
     }
 
     const existing = await this.assetRepository.getByLibraryIdAndOriginalPath(library.id, filePath);
@@ -320,13 +317,10 @@ export class LibraryService extends BaseService {
     if (!destinationStat.isFile()) {
       throw new BadRequestException('Moved destination path is not a file');
     }
-    const sourceIsSidecar = mimeTypes.isSidecar(sourcePath);
-    const destinationIsSidecar = mimeTypes.isSidecar(destinationPath);
-    if (sourceIsSidecar !== destinationIsSidecar) {
-      throw new BadRequestException('Moved file cannot change between an asset and a sidecar');
-    }
-    if (!destinationIsSidecar && !mimeTypes.isAsset(destinationPath)) {
-      throw new BadRequestException('Moved destination file is not a supported image or video');
+    const sourceIsAsset = mimeTypes.isAsset(sourcePath);
+    const destinationIsAsset = mimeTypes.isAsset(destinationPath);
+    if (sourceIsAsset !== destinationIsAsset) {
+      throw new BadRequestException('Moved file cannot change between an asset and a companion file');
     }
 
     try {
@@ -335,7 +329,7 @@ export class LibraryService extends BaseService {
       if (error.code !== 'ENOENT') {
         throw error;
       }
-      if (destinationIsSidecar) {
+      if (!destinationIsAsset) {
         return;
       }
       if (

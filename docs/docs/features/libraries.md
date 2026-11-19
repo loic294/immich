@@ -32,7 +32,7 @@ Enable **Administration → Settings → External Library → API file managemen
 
 The fork's `POST /api/libraries/{sourceLibraryId}/files/move` endpoint synchronizes a move already performed on disk. Send `sourcePath`, `destinationPath`, the optional `destinationLibraryId` (defaults to the source library), and the original `assetId`. Paths must belong to their respective libraries. The destination file must exist and the source file must be absent. Sending the original asset ID allows a completed cross-library move to be retried safely, including requeuing background work after a queue failure.
 
-File add and move notifications for XMP sidecars are acknowledged without creating or transferring an asset. Synchronize the companion photo or video normally; its post-sync jobs rediscover the sidecar at the destination.
+File add and move notifications for non-media companion files are acknowledged without creating or transferring an asset. Synchronize the companion photo or video normally; its post-sync jobs rediscover supported metadata sidecars at the destination.
 
 Cross-library moves preserve the asset ID and file metadata. Existing destination assets are conflicts, not silently deleted or merged. Coordinate filesystem watchers and library scans with the move; if a scan imports the destination first, the API reports a conflict. Generated thumbnails and video files are migrated asynchronously, and sidecars are rediscovered at the new location.
 
