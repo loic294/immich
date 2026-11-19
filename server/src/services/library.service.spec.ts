@@ -1310,6 +1310,38 @@ describe(LibraryService.name, () => {
       expect(mocks.job.queueAll).toHaveBeenCalled();
     });
 
+    it('should acknowledge an added sidecar without creating an asset', async () => {
+      const library = factory.library({ importPaths: ['/mnt/library'] });
+      mocks.library.get.mockResolvedValue(library);
+      mocks.storage.stat.mockResolvedValue({ isFile: () => true, mtime: newDate() } as Stats);
+
+      await sut.syncFileAdd(library.id, { path: '/mnt/library/photo.png.xmp' });
+
+      expect(mocks.asset.createAll).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('should acknowledge a moved sidecar without transferring an asset', async () => {
+      const source = factory.library({ importPaths: ['/mnt/source'] });
+      const destination = factory.library({ importPaths: ['/mnt/destination'] });
+      mocks.library.get.mockImplementation((id) => Promise.resolve(id === source.id ? source : destination));
+      mocks.storage.stat.mockImplementation((filePath): Promise<Stats> =>
+        filePath === '/mnt/source/retry-move.png.xmp'
+          ? Promise.reject({ code: 'ENOENT' })
+          : Promise.resolve({ isFile: () => true, mtime: newDate() } as Stats),
+      );
+
+      await sut.syncFileMove(source.id, {
+        sourcePath: '/mnt/source/retry-move.png.xmp',
+        destinationPath: '/mnt/destination/retry-move.png.xmp',
+        destinationLibraryId: destination.id,
+      });
+
+      expect(mocks.library.moveAsset).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
     it('should ignore a repeat remove notification', async () => {
       const library = factory.library({ importPaths: ['/mnt/library'] });
       mocks.library.get.mockResolvedValue(library);
